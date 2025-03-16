@@ -483,9 +483,11 @@ namespace plume {
         case RenderPrimitiveTopology::TRIANGLE_LIST:
             return D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;     
         case RenderPrimitiveTopology::TRIANGLE_STRIP:
-            return D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;     
+            return D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
+#   ifdef D3D12_AGILITY_SDK_ENABLED
         case RenderPrimitiveTopology::TRIANGLE_FAN:
             return D3D_PRIMITIVE_TOPOLOGY_TRIANGLEFAN;
+#   endif
         default:
             assert(false && "Unknown primitive topology.");
             return D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
@@ -624,9 +626,10 @@ namespace plume {
         switch (location.type) {
         case RenderTextureCopyType::SUBRESOURCE: {
             const D3D12Texture *interfaceTexture = static_cast<const D3D12Texture *>(location.texture);
+            uint32_t mipLevels = interfaceTexture->desc.mipLevels;
             loc.pResource = (interfaceTexture != nullptr) ? interfaceTexture->d3d : nullptr;
             loc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-            loc.SubresourceIndex = location.subresource.index;
+            loc.SubresourceIndex = location.subresource.mipLevel + location.subresource.arrayIndex * mipLevels;
             break;
         }
         case RenderTextureCopyType::PLACED_FOOTPRINT: {
@@ -1054,6 +1057,7 @@ namespace plume {
                 case RenderTextureViewDimension::TEXTURE_1D:
                     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1D;
                     srvDesc.Texture1D.MipLevels = interfaceTextureView->mipLevels;
+                    srvDesc.Texture1D.MostDetailedMip = interfaceTextureView->mipSlice;
                     break;
                 case RenderTextureViewDimension::TEXTURE_2D:
                     if (isMSAA) {
@@ -1062,16 +1066,19 @@ namespace plume {
                     else {
                         srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
                         srvDesc.Texture2D.MipLevels = interfaceTextureView->mipLevels;
+                        srvDesc.Texture2D.MostDetailedMip = interfaceTextureView->mipSlice;
                     }
 
                     break;
                 case RenderTextureViewDimension::TEXTURE_3D:
                     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
                     srvDesc.Texture3D.MipLevels = interfaceTextureView->mipLevels;
+                    srvDesc.Texture3D.MostDetailedMip = interfaceTextureView->mipSlice;
                     break;
                 case RenderTextureViewDimension::TEXTURE_CUBE:
                     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
                     srvDesc.TextureCube.MipLevels = interfaceTextureView->mipLevels;
+                    srvDesc.TextureCube.MostDetailedMip = interfaceTextureView->mipSlice;
                     break;
                 default:
                     assert(false && "Unknown texture dimension.");
@@ -1485,14 +1492,13 @@ namespace plume {
 
     // D3D12CommandList
 
-    D3D12CommandList::D3D12CommandList(D3D12Device *device, RenderCommandListType type) {
-        assert(device != nullptr);
+    D3D12CommandList::D3D12CommandList(D3D12CommandQueue *queue) {
+        assert(queue != nullptr);
 
-        this->device = device;
-        this->type = type;
+        this->queue = queue;
 
         D3D12_COMMAND_LIST_TYPE commandListType;
-        switch (type) {
+        switch (queue->type) {
         case RenderCommandListType::DIRECT:
             commandListType = D3D12_COMMAND_LIST_TYPE_DIRECT;
             break;
@@ -1507,13 +1513,13 @@ namespace plume {
             return;
         }
 
-        HRESULT res = device->d3d->CreateCommandAllocator(commandListType, IID_PPV_ARGS(&commandAllocator));
+        HRESULT res = queue->device->d3d->CreateCommandAllocator(commandListType, IID_PPV_ARGS(&commandAllocator));
         if (FAILED(res)) {
             fprintf(stderr, "CreateCommandAllocator failed with error code 0x%lX.\n", res);
             return;
         }
 
-        res = device->d3d->CreateCommandList(0, commandListType, commandAllocator, nullptr, IID_PPV_ARGS(&d3d));
+        res = queue->device->d3d->CreateCommandList(0, commandListType, commandAllocator, nullptr, IID_PPV_ARGS(&d3d));
         if (FAILED(res)) {
             fprintf(stderr, "CreateCommandList failed with error code 0x%lX.\n", res);
             return;
@@ -1878,8 +1884,12 @@ namespace plume {
     }
 
     void D3D12CommandList::setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) {
-        assert(device->capabilities.dynamicDepthBias && "Dynamic depth bias is unsupported on this device.");
+#   ifdef D3D12_AGILITY_SDK_ENABLED
+        assert(queue->device->capabilities.dynamicDepthBias && "Dynamic depth bias is unsupported on this device.");
         d3d->RSSetDepthBias(depthBias, depthBiasClamp, slopeScaledDepthBias);
+#   else
+        assert(false && "Dynamic depth bias is unsupported without the Agility SDK.");
+#   endif
     }
 
     void D3D12CommandList::clearColor(uint32_t attachmentIndex, RenderColor colorValue, const RenderRect *clearRects, uint32_t clearRectsCount) {
@@ -2065,7 +2075,7 @@ namespace plume {
 
     void D3D12CommandList::checkDescriptorHeaps() {
         if (!descriptorHeapsSet) {
-            ID3D12DescriptorHeap *descriptorHeaps[] = { device->viewHeapAllocator->heap, device->samplerHeapAllocator->heap };
+            ID3D12DescriptorHeap *descriptorHeaps[] = { queue->device->viewHeapAllocator->heap, queue->device->samplerHeapAllocator->heap };
             d3d->SetDescriptorHeaps(std::size(descriptorHeaps), descriptorHeaps);
             descriptorHeapsSet = true;
         }
@@ -2134,8 +2144,8 @@ namespace plume {
         checkDescriptorHeaps();
 
         D3D12DescriptorSet *interfaceDescriptorSet = static_cast<D3D12DescriptorSet *>(descriptorSet);
-        setRootDescriptorTable(device->viewHeapAllocator.get(), interfaceDescriptorSet->viewAllocation, activePipelineLayout->setViewRootIndices[setIndex], setCompute);
-        setRootDescriptorTable(device->samplerHeapAllocator.get(), interfaceDescriptorSet->samplerAllocation, activePipelineLayout->setSamplerRootIndices[setIndex], setCompute);
+        setRootDescriptorTable(queue->device->viewHeapAllocator.get(), interfaceDescriptorSet->viewAllocation, activePipelineLayout->setViewRootIndices[setIndex], setCompute);
+        setRootDescriptorTable(queue->device->samplerHeapAllocator.get(), interfaceDescriptorSet->samplerAllocation, activePipelineLayout->setSamplerRootIndices[setIndex], setCompute);
     }
 
     void D3D12CommandList::setRootDescriptorTable(D3D12DescriptorHeapAllocator *heapAllocator, D3D12DescriptorSet::HeapAllocation &heapAllocation, uint32_t rootIndex, bool setCompute) {
@@ -2280,11 +2290,18 @@ namespace plume {
         }
     }
 
+    std::unique_ptr<RenderCommandList> D3D12CommandQueue::createCommandList() {
+        return std::make_unique<D3D12CommandList>(this);
+    }
+
     std::unique_ptr<RenderSwapChain> D3D12CommandQueue::createSwapChain(RenderWindow renderWindow, uint32_t bufferCount, RenderFormat format, uint32_t maxFrameLatency) {
         return std::make_unique<D3D12SwapChain>(this, renderWindow, bufferCount, format, maxFrameLatency);
     }
 
     void D3D12CommandQueue::executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) {
+        assert(commandLists != nullptr);
+        assert(commandListCount > 0);
+
         for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
             D3D12CommandSemaphore *interfaceSemaphore = static_cast<D3D12CommandSemaphore *>(waitSemaphores[i]);
             d3d->Wait(interfaceSemaphore->d3d, interfaceSemaphore->semaphoreValue);
@@ -2428,12 +2445,16 @@ namespace plume {
 
     D3D12TextureView::D3D12TextureView(D3D12Texture *texture, const RenderTextureViewDesc &desc) {
         assert(texture != nullptr);
+        assert(desc.mipSlice < texture->desc.mipLevels);
+        assert(desc.arrayIndex < texture->desc.arraySize);
 
         this->texture = texture;
         this->format = toDXGI(desc.format);
         this->dimension = desc.dimension;
-        this->mipLevels = desc.mipLevels;
+        this->mipLevels = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
         this->mipSlice = desc.mipSlice;
+        this->arraySize = std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex);
+        this->arrayIndex = desc.arrayIndex;
         this->shader4ComponentMapping = toD3D12(desc.componentMapping);
         
         // D3D12 and Vulkan disagree on whether D32 is usable as a texture view format. We just make D3D12 use R32 instead.
@@ -2672,11 +2693,12 @@ namespace plume {
         assert(format != RenderShaderFormat::UNKNOWN);
         assert(format == RenderShaderFormat::DXIL);
 
-        this->data = data;
-        this->size = size;
         this->device = device;
         this->format = format;
         this->entryPointName = (entryPointName != nullptr) ? std::string(entryPointName) : std::string();
+
+        const uint8_t *dataBytes = reinterpret_cast<const uint8_t *>(data);
+        this->d3d = std::vector(dataBytes, dataBytes + size);
     }
 
     D3D12Shader::~D3D12Shader() { }
@@ -2743,13 +2765,15 @@ namespace plume {
 
     D3D12ComputePipeline::D3D12ComputePipeline(D3D12Device *device, const RenderComputePipelineDesc &desc) : D3D12Pipeline(device, Type::Compute) {
         assert(desc.pipelineLayout != nullptr);
+        assert(desc.computeShader != nullptr);
+        assert((desc.threadGroupSizeX > 0) && (desc.threadGroupSizeY > 0) && (desc.threadGroupSizeZ > 0));
 
         const D3D12PipelineLayout *rootSignature = static_cast<const D3D12PipelineLayout *>(desc.pipelineLayout);
         const D3D12Shader *computeShader = static_cast<const D3D12Shader *>(desc.computeShader);
         D3D12_COMPUTE_PIPELINE_STATE_DESC psoDesc = {};
         psoDesc.pRootSignature = rootSignature->rootSignature;
-        psoDesc.CS.pShaderBytecode = computeShader->data;
-        psoDesc.CS.BytecodeLength = computeShader->size;
+        psoDesc.CS.pShaderBytecode = computeShader->d3d.data();
+        psoDesc.CS.BytecodeLength = computeShader->d3d.size();
         device->d3d->CreateComputePipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
     }
 
@@ -2781,12 +2805,12 @@ namespace plume {
         const D3D12Shader *pixelShader = static_cast<const D3D12Shader *>(desc.pixelShader);
         D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
         psoDesc.pRootSignature = pipelineLayout->rootSignature;
-        psoDesc.VS.pShaderBytecode = (vertexShader != nullptr) ? vertexShader->data : nullptr;
-        psoDesc.VS.BytecodeLength = (vertexShader != nullptr) ? vertexShader->size : 0;
-        psoDesc.GS.pShaderBytecode = (geometryShader != nullptr) ? geometryShader->data : nullptr;
-        psoDesc.GS.BytecodeLength = (geometryShader != nullptr) ? geometryShader->size : 0;
-        psoDesc.PS.pShaderBytecode = (pixelShader != nullptr) ? pixelShader->data : nullptr;
-        psoDesc.PS.BytecodeLength = (pixelShader != nullptr) ? pixelShader->size : 0;
+        psoDesc.VS.pShaderBytecode = (vertexShader != nullptr) ? vertexShader->d3d.data() : nullptr;
+        psoDesc.VS.BytecodeLength = (vertexShader != nullptr) ? vertexShader->d3d.size() : 0;
+        psoDesc.GS.pShaderBytecode = (geometryShader != nullptr) ? geometryShader->d3d.data() : nullptr;
+        psoDesc.GS.BytecodeLength = (geometryShader != nullptr) ? geometryShader->d3d.size() : 0;
+        psoDesc.PS.pShaderBytecode = (pixelShader != nullptr) ? pixelShader->d3d.data() : nullptr;
+        psoDesc.PS.BytecodeLength = (pixelShader != nullptr) ? pixelShader->d3d.size() : 0;
         psoDesc.SampleMask = UINT_MAX;
         psoDesc.SampleDesc.Count = desc.multisampling.sampleCount;
         if (desc.primitiveTopology == RenderPrimitiveTopology::LINE_STRIP || desc.primitiveTopology == RenderPrimitiveTopology::TRIANGLE_STRIP) {
@@ -2796,10 +2820,15 @@ namespace plume {
         psoDesc.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
         psoDesc.RasterizerState.DepthClipEnable = desc.depthClipEnabled;
         psoDesc.RasterizerState.DepthBias = desc.depthBias;
+        psoDesc.RasterizerState.DepthBiasClamp = desc.depthBiasClamp;
         psoDesc.RasterizerState.SlopeScaledDepthBias = desc.slopeScaledDepthBias;
 
         if (desc.dynamicDepthBiasEnabled) {
+#       ifdef D3D12_AGILITY_SDK_ENABLED
             psoDesc.Flags |= D3D12_PIPELINE_STATE_FLAG_DYNAMIC_DEPTH_BIAS;
+#       else
+            assert(false && "Dynamic depth bias is unsupported without the Agility SDK.");
+#       endif
         }
 
         switch (desc.cullMode) {
@@ -2940,8 +2969,8 @@ namespace plume {
             assert(libraryShader != nullptr);
 
             D3D12_DXIL_LIBRARY_DESC &libraryDesc = libraryDescs[i];
-            libraryDesc.DXILLibrary.pShaderBytecode = libraryShader->data;
-            libraryDesc.DXILLibrary.BytecodeLength = libraryShader->size;
+            libraryDesc.DXILLibrary.pShaderBytecode = libraryShader->d3d.data();
+            libraryDesc.DXILLibrary.BytecodeLength = libraryShader->d3d.size();
             libraryDesc.pExports = &exportDescs[exportsIndexStart];
             libraryDesc.NumExports = exportsIndex - exportsIndexStart;
 
@@ -3383,8 +3412,11 @@ namespace plume {
                 rtStateUpdateSupportOption = d3d12Options5.RaytracingTier >= D3D12_RAYTRACING_TIER_1_1;
             }
 
-            // Check if triangle fan is supported.
             bool triangleFanSupportOption = false;
+            bool dynamicDepthBiasOption = false;
+
+#       ifdef D3D12_AGILITY_SDK_ENABLED
+            // Check if triangle fan is supported.
             D3D12_FEATURE_DATA_D3D12_OPTIONS15 d3d12Options15 = {};
             res = deviceOption->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS15, &d3d12Options15, sizeof(d3d12Options15));
             if (SUCCEEDED(res)) {
@@ -3392,12 +3424,12 @@ namespace plume {
             }
 
             // Check if dynamic depth bias is supported.
-            bool dynamicDepthBiasOption = false;
             D3D12_FEATURE_DATA_D3D12_OPTIONS16 d3d12Options16 = {};
             res = deviceOption->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &d3d12Options16, sizeof(d3d12Options16));
             if (SUCCEEDED(res)) {
                 dynamicDepthBiasOption = d3d12Options16.DynamicDepthBiasSupported;
             }
+#       endif
 
             // Check if the architecture has UMA.
             bool uma = false;
@@ -3428,6 +3460,8 @@ namespace plume {
                 capabilities.raytracing = rtSupportOption;
                 capabilities.raytracingStateUpdate = rtStateUpdateSupportOption;
                 capabilities.sampleLocations = samplePositionsOption;
+                // Resolve modes require sample positions support.
+                capabilities.resolveModes = samplePositionsOption;
                 capabilities.triangleFan = triangleFanSupportOption;
                 capabilities.dynamicDepthBias = dynamicDepthBiasOption;
                 capabilities.uma = uma;
@@ -3519,7 +3553,10 @@ namespace plume {
         // Fill capabilities.
         capabilities.descriptorIndexing = true;
         capabilities.scalarBlockLayout = true;
+        capabilities.bufferDeviceAddress = true;
         capabilities.presentWait = true;
+        capabilities.queryPools = true;
+        capabilities.maxTextureSize = 16384;
         capabilities.preferHDR = description.dedicatedVideoMemory > (512 * 1024 * 1024);
 
         // Create descriptor heaps allocator.
@@ -3542,10 +3579,6 @@ namespace plume {
         rtDummyGlobalPipelineLayout.reset();
         rtDummyLocalPipelineLayout.reset();
         release();
-    }
-
-    std::unique_ptr<RenderCommandList> D3D12Device::createCommandList(RenderCommandListType type) {
-        return std::make_unique<D3D12CommandList>(this, type);
     }
 
     std::unique_ptr<RenderDescriptorSet> D3D12Device::createDescriptorSet(const RenderDescriptorSetDesc &desc) {
@@ -3798,10 +3831,6 @@ namespace plume {
         return countsSupported;
     }
 
-    void D3D12Device::waitIdle() const {
-        assert(false && "Use fences to replicate wait idle behavior on D3D12.");
-    }
-
     void D3D12Device::release() {
         if (d3d != nullptr) {
             d3d->Release();
@@ -3816,6 +3845,16 @@ namespace plume {
 
     bool D3D12Device::isValid() const {
         return d3d != nullptr;
+    }
+
+    bool D3D12Device::beginCapture() {
+        assert(false && "Captures are not currently implemented in D3D12.");
+        return false;
+    }
+
+    bool D3D12Device::endCapture() {
+        assert(false && "Captures are not currently implemented in D3D12.");
+        return false;
     }
 
     // D3D12Interface

@@ -13,7 +13,12 @@
 #include <mutex>
 #include <unordered_map>
 
-#include <directx/d3d12.h>
+#ifdef D3D12_AGILITY_SDK_ENABLED
+#   include <directx/d3d12.h>
+#else
+#   include <d3d12.h>
+#endif
+
 #include <dxgi1_4.h>
 
 #include "D3D12MemAlloc.h"
@@ -39,7 +44,6 @@ namespace plume {
 
         typedef std::map<uint32_t, FreeBlock> OffsetFreeBlockMap;
         typedef std::multimap<uint32_t, OffsetFreeBlockMap::iterator> SizeFreeBlockMap;
-
         struct FreeBlock {
             uint32_t size;
             SizeFreeBlockMap::iterator sizeMapIterator;
@@ -158,10 +162,13 @@ namespace plume {
     };
 
     struct D3D12CommandList : RenderCommandList {
+#   ifdef D3D12_AGILITY_SDK_ENABLED
         ID3D12GraphicsCommandList9 *d3d = nullptr;
+#   else
+        ID3D12GraphicsCommandList7 *d3d = nullptr;
+#   endif
         ID3D12CommandAllocator *commandAllocator = nullptr;
-        D3D12Device *device = nullptr;
-        RenderCommandListType type = RenderCommandListType::UNKNOWN;
+        D3D12CommandQueue *queue = nullptr;
         const D3D12Framebuffer *targetFramebuffer = nullptr;
         bool targetFramebufferSamplePositionsSet = false;
         bool open = false;
@@ -172,7 +179,7 @@ namespace plume {
         D3D12_PRIMITIVE_TOPOLOGY activeTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
         bool activeSamplePositions = false;
 
-        D3D12CommandList(D3D12Device *device, RenderCommandListType type);
+        D3D12CommandList(D3D12CommandQueue *queue);
         ~D3D12CommandList() override;
         void begin() override;
         void end() override;
@@ -248,6 +255,7 @@ namespace plume {
 
         D3D12CommandQueue(D3D12Device *device, RenderCommandListType type);
         ~D3D12CommandQueue() override;
+        std::unique_ptr<RenderCommandList> createCommandList() override;
         std::unique_ptr<RenderSwapChain> createSwapChain(RenderWindow renderWindow, uint32_t textureCount, RenderFormat format, uint32_t newFrameLatency) override;
         void executeCommandLists(const RenderCommandList **commandLists, uint32_t commandListCount, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount, RenderCommandSemaphore **signalSemaphores, uint32_t signalSemaphoreCount, RenderCommandFence *signalFence) override;
         void waitForCommandFence(RenderCommandFence *fence) override;
@@ -307,6 +315,8 @@ namespace plume {
         RenderTextureViewDimension dimension = RenderTextureViewDimension::UNKNOWN;
         uint32_t mipLevels = 0;
         uint32_t mipSlice = 0;
+        uint32_t arraySize = 0;
+        uint32_t arrayIndex = 0;
         uint32_t shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
         D3D12TextureView(D3D12Texture *texture, const RenderTextureViewDesc &desc);
@@ -336,8 +346,7 @@ namespace plume {
     };
 
     struct D3D12Shader : RenderShader {
-        const void* data = nullptr;
-        uint64_t size = 0;
+        std::vector<uint8_t> d3d;
         std::string entryPointName;
         D3D12Device *device = nullptr;
         RenderShaderFormat format = RenderShaderFormat::UNKNOWN;
@@ -436,7 +445,6 @@ namespace plume {
 
         D3D12Device(D3D12Interface *renderInterface, const std::string &preferredDeviceName);
         ~D3D12Device() override;
-        std::unique_ptr<RenderCommandList> createCommandList(RenderCommandListType type) override;
         std::unique_ptr<RenderDescriptorSet> createDescriptorSet(const RenderDescriptorSetDesc &desc) override;
         std::unique_ptr<RenderShader> createShader(const void *data, uint64_t size, const char *entryPointName, RenderShaderFormat format) override;
         std::unique_ptr<RenderSampler> createSampler(const RenderSamplerDesc &desc) override;
@@ -459,9 +467,10 @@ namespace plume {
         const RenderDeviceCapabilities &getCapabilities() const override;
         const RenderDeviceDescription &getDescription() const override;
         RenderSampleCounts getSampleCountsSupported(RenderFormat format) const override;
-        void waitIdle() const override;
         void release();
         bool isValid() const;
+        bool beginCapture() override;
+        bool endCapture() override;
     };
 
     struct D3D12Interface : RenderInterface {
