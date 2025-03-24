@@ -1935,11 +1935,6 @@ namespace plume {
 
     MetalCommandList::~MetalCommandList() {
         mtl->release();
-        indexBuffer->release();
-
-        for (MTL::Buffer *buffer : vertexBuffers) {
-            buffer->release();
-        }
     }
 
     void MetalCommandList::begin() {
@@ -3123,7 +3118,6 @@ namespace plume {
         resolveTexturePipelineState->release();
         clearVertexFunction->release();
         clearColorFunction->release();
-        clearDepthFunction->release();
         clearDepthFunction->release();
         sharedBlitDescriptor->release();
     }
