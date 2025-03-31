@@ -1069,7 +1069,13 @@ namespace plume {
     }
 
     void MetalBuffer::unmap(uint32_t subresource, const RenderRange* writtenRange) {
-        // Do nothing.
+        if (mtl->storageMode() == MTL::StorageModeManaged) {
+            if (writtenRange == nullptr) {
+                mtl->didModifyRange(NS::Range(0, desc.size));
+            } else {
+                mtl->didModifyRange(NS::Range(writtenRange->begin, writtenRange->end - writtenRange->begin));
+            }
+        }
     }
 
     std::unique_ptr<RenderBufferFormattedView> MetalBuffer::createBufferFormattedView(RenderFormat format) {
@@ -1500,7 +1506,7 @@ namespace plume {
         requiredSize = alignUp(requiredSize, 256);
 
         argumentBuffer = {
-            .mtl = device->mtl->newBuffer(requiredSize, MTL::ResourceStorageModeManaged),
+            .mtl = device->mtl->newBuffer(requiredSize, MTL::ResourceStorageModeShared),
             .argumentEncoder = setLayout->argumentEncoder,
             .offset = 0,
         };
@@ -2722,7 +2728,7 @@ namespace plume {
         }
 
         if (dirtyComputeState.descriptorSets) {
-            activeComputePipelineLayout->bindDescriptorSets(activeComputeEncoder, computeDescriptorSets, DESCRIPTOR_SET_MAX_INDEX, true, dirtyComputeState.descriptorSetDirtyIndex);
+            activeComputePipelineLayout->bindDescriptorSets(activeComputeEncoder, computeDescriptorSets, DESCRIPTOR_SET_MAX_INDEX, true, dirtyComputeState.descriptorSetDirtyIndex, currentEncoderDescriptorSets);
             dirtyComputeState.descriptorSets = 0;
             dirtyComputeState.descriptorSetDirtyIndex = DESCRIPTOR_SET_MAX_INDEX + 1;
         }
@@ -2742,9 +2748,11 @@ namespace plume {
 
     void MetalCommandList::endActiveComputeEncoder() {
         if (activeComputeEncoder != nullptr) {
+            bindEncoderResources(activeComputeEncoder, true);
             activeComputeEncoder->endEncoding();
             activeComputeEncoder->release();
             activeComputeEncoder = nullptr;
+            currentEncoderDescriptorSets.clear();
 
             // Clear state cache for compute
             stateCache.lastPushConstants.clear();
@@ -2842,7 +2850,7 @@ namespace plume {
 
         if (dirtyGraphicsState.descriptorSets) {
             if (activeGraphicsPipelineLayout) {
-                activeGraphicsPipelineLayout->bindDescriptorSets(activeRenderEncoder, renderDescriptorSets, DESCRIPTOR_SET_MAX_INDEX, false, dirtyGraphicsState.descriptorSetDirtyIndex);
+                activeGraphicsPipelineLayout->bindDescriptorSets(activeRenderEncoder, renderDescriptorSets, DESCRIPTOR_SET_MAX_INDEX, false, dirtyGraphicsState.descriptorSetDirtyIndex, currentEncoderDescriptorSets);
             }
             dirtyGraphicsState.descriptorSets = 0;
             dirtyGraphicsState.descriptorSetDirtyIndex = DESCRIPTOR_SET_MAX_INDEX + 1;
@@ -2867,9 +2875,11 @@ namespace plume {
 
     void MetalCommandList::endActiveRenderEncoder() {
         if (activeRenderEncoder != nullptr) {
+            bindEncoderResources(activeRenderEncoder, false);
             activeRenderEncoder->endEncoding();
             activeRenderEncoder->release();
             activeRenderEncoder = nullptr;
+            currentEncoderDescriptorSets.clear();
 
             // Mark all state as needing rebind for next encoder
             dirtyGraphicsState.setAll();
@@ -2921,6 +2931,28 @@ namespace plume {
             activeResolveComputeEncoder->endEncoding();
             activeResolveComputeEncoder->release();
             activeResolveComputeEncoder = nullptr;
+        }
+    }
+
+    void MetalCommandList::bindEncoderResources(MTL::CommandEncoder* encoder, bool isCompute) {
+        if (isCompute) {
+            auto* computeEncoder = static_cast<MTL::ComputeCommandEncoder*>(encoder);
+            for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+                for (const auto& entry : descriptorSet->resourceEntries) {
+                    if (entry.resource != nullptr) {
+                        computeEncoder->useResource(entry.resource, mapResourceUsage(entry.type));
+                    }
+                }
+            }
+        } else {
+            auto* renderEncoder = static_cast<MTL::RenderCommandEncoder*>(encoder);
+            for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+                for (const auto& entry : descriptorSet->resourceEntries) {
+                    if (entry.resource != nullptr) {
+                        renderEncoder->useResource(entry.resource, mapResourceUsage(entry.type), MTL::RenderStageVertex | MTL::RenderStageFragment);
+                    }
+                }
+            }
         }
     }
 
@@ -3032,7 +3064,7 @@ namespace plume {
 
     MetalPipelineLayout::~MetalPipelineLayout() {}
 
-    void MetalPipelineLayout::bindDescriptorSets(MTL::CommandEncoder* encoder, const MetalDescriptorSet* const* descriptorSets, uint32_t descriptorSetCount, bool isCompute, uint32_t startIndex = 0) const {
+    void MetalPipelineLayout::bindDescriptorSets(MTL::CommandEncoder* encoder, const MetalDescriptorSet* const* descriptorSets, uint32_t descriptorSetCount, bool isCompute, uint32_t startIndex, std::unordered_set<MetalDescriptorSet*>& encoderDescriptorSets) const {
         for (uint32_t i = startIndex; i < setLayoutCount; i++) {
             if (i >= descriptorSetCount || descriptorSets[i] == nullptr) {
                 continue;
@@ -3041,19 +3073,8 @@ namespace plume {
             const MetalDescriptorSet* descriptorSet = descriptorSets[i];
             const MetalArgumentBuffer& descriptorBuffer = descriptorSet->argumentBuffer;
 
-            // Bind resources
-            for (uint32_t descriptorIndex = 0; descriptorIndex < descriptorSet->resourceEntries.size(); descriptorIndex++) {
-                const auto& entry = descriptorSet->resourceEntries[descriptorIndex];
-                if (entry.resource == nullptr) {
-                    continue;
-                }
-
-                if (isCompute) {
-                    static_cast<MTL::ComputeCommandEncoder*>(encoder)->useResource(entry.resource, mapResourceUsage(entry.type));
-                } else {
-                    static_cast<MTL::RenderCommandEncoder*>(encoder)->useResource(entry.resource, mapResourceUsage(entry.type), MTL::RenderStageVertex | MTL::RenderStageFragment);
-                }
-            }
+            // Track descriptor set for later resource binding
+            encoderDescriptorSets.insert(const_cast<MetalDescriptorSet*>(descriptorSet));
 
             // Bind argument buffer
             if (isCompute) {
