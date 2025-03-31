@@ -480,6 +480,8 @@ namespace plume {
                 return MTL::VertexFormatInt2;
             case RenderFormat::R8G8B8A8_UNORM:
                 return MTL::VertexFormatUChar4Normalized;
+            case RenderFormat::B8G8R8A8_UNORM:
+                return MTL::VertexFormatUChar4Normalized_BGRA;
             case RenderFormat::R8G8B8A8_UINT:
                 return MTL::VertexFormatUChar4;
             case RenderFormat::R8G8B8A8_SNORM:
@@ -546,13 +548,17 @@ namespace plume {
         }
     }
 
-    MTL::TextureType mapTextureType(RenderTextureDimension dimension, RenderSampleCounts sampleCount) {
+    MTL::TextureType mapTextureType(RenderTextureDimension dimension, RenderSampleCounts sampleCount, uint32_t arraySize) {
         switch (dimension) {
             case RenderTextureDimension::TEXTURE_1D:
                 assert(sampleCount <= 1 && "Multisampling not supported for 1D textures");
-                return MTL::TextureType1D;
+                return (arraySize > 1) ? MTL::TextureType1DArray : MTL::TextureType1D;
             case RenderTextureDimension::TEXTURE_2D:
-                return (sampleCount > 1) ? MTL::TextureType2DMultisample : MTL::TextureType2D;
+                if (arraySize > 1) {
+                    return (sampleCount > 1) ? MTL::TextureType2DMultisampleArray : MTL::TextureType2DArray;
+                } else {
+                    return (sampleCount > 1) ? MTL::TextureType2DMultisample : MTL::TextureType2D;
+                }
             case RenderTextureDimension::TEXTURE_3D:
                 assert(sampleCount <= 1 && "Multisampling not supported for 3D textures");
                 return MTL::TextureType3D;
@@ -581,8 +587,10 @@ namespace plume {
             case RenderPrimitiveTopology::POINT_LIST:
                 return MTL::PrimitiveTopologyClassPoint;
             case RenderPrimitiveTopology::LINE_LIST:
+            case RenderPrimitiveTopology::LINE_STRIP:
                 return MTL::PrimitiveTopologyClassLine;
             case RenderPrimitiveTopology::TRIANGLE_LIST:
+            case RenderPrimitiveTopology::TRIANGLE_STRIP:
                 return MTL::PrimitiveTopologyClassTriangle;
             default:
                 assert(false && "Unknown primitive topology type.");
@@ -1116,7 +1124,7 @@ namespace plume {
         this->desc = desc;
 
         MTL::TextureDescriptor *descriptor = MTL::TextureDescriptor::alloc()->init();
-        const MTL::TextureType textureType = mapTextureType(desc.dimension, desc.multisampling.sampleCount);
+        const MTL::TextureType textureType = mapTextureType(desc.dimension, desc.multisampling.sampleCount, desc.arraySize);
 
         descriptor->setTextureType(textureType);
         descriptor->setStorageMode(MTL::StorageModePrivate);
@@ -1161,7 +1169,6 @@ namespace plume {
 
     MetalTextureView::MetalTextureView(MetalTexture *texture, const RenderTextureViewDesc &desc) {
         assert(texture != nullptr);
-        assert(texture->desc.dimension == desc.dimension && "Creating a view with a different dimension is currently not supported.");
 
         this->texture = texture->mtl->newTextureView(
             mapPixelFormat(desc.format),
@@ -1235,26 +1242,23 @@ namespace plume {
     }
 
     MTL::Function* MetalShader::createFunction(const RenderSpecConstant *specConstants, const uint32_t specConstantsCount) const {
+        MTL::FunctionConstantValues *values = MTL::FunctionConstantValues::alloc()->init();
         if (specConstants != nullptr) {
-            MTL::FunctionConstantValues *values = MTL::FunctionConstantValues::alloc()->init();
             for (uint32_t i = 0; i < specConstantsCount; i++) {
                 const RenderSpecConstant &specConstant = specConstants[i];
                 values->setConstantValue(&specConstant.value, MTL::DataTypeUInt, specConstant.index);
-            }
+            } 
+        }
+        NS::Error *error = nullptr;
+        MTL::Function *function = library->newFunction(functionName, values, &error);
+        values->release();
 
-            NS::Error *error = nullptr;
-            MTL::Function *function = library->newFunction(functionName, values, &error);
-            values->release();
-
-            if (error != nullptr) {
-                fprintf(stderr, "MTLLibrary newFunction: failed with error: %s.\n", error->localizedDescription()->utf8String());
-                return nullptr;
-            }
-
-            return function;
+        if (error != nullptr) {
+            fprintf(stderr, "MTLLibrary newFunction: failed with error: %s.\n", error->localizedDescription()->utf8String());
+            return nullptr;
         }
 
-        return library->newFunction(functionName);
+        return function;
     }
 
     // MetalSampler
@@ -1412,8 +1416,11 @@ namespace plume {
 
         // State variables, initialized here to be reused in encoder re-binding
         MTL::DepthStencilDescriptor *depthStencilDescriptor = MTL::DepthStencilDescriptor::alloc()->init();
-        depthStencilDescriptor->setDepthWriteEnabled(desc.depthWriteEnabled);
-        depthStencilDescriptor->setDepthCompareFunction(desc.depthEnabled ? mapCompareFunction(desc.depthFunction) : MTL::CompareFunctionAlways);
+
+        if (desc.depthTargetFormat != RenderFormat::UNKNOWN) {
+            depthStencilDescriptor->setDepthWriteEnabled(desc.depthWriteEnabled);
+            depthStencilDescriptor->setDepthCompareFunction(desc.depthEnabled ? mapCompareFunction(desc.depthFunction) : MTL::CompareFunctionAlways);
+        }
 
         NS::Error *error = nullptr;
         state.depthStencilState = device->mtl->newDepthStencilState(depthStencilDescriptor);
@@ -2020,7 +2027,7 @@ namespace plume {
         checkActiveRenderEncoder();
         checkForUpdatesInGraphicsState();
 
-        activeRenderEncoder->drawIndexedPrimitives(currentPrimitiveType, indexCountPerInstance, currentIndexType, indexBuffer, indexBufferOffset + (startIndexLocation * sizeof(uint32_t)), instanceCount, baseVertexLocation, startInstanceLocation);
+        activeRenderEncoder->drawIndexedPrimitives(currentPrimitiveType, indexCountPerInstance, currentIndexType, indexBuffer, indexBufferOffset + (startIndexLocation * indexTypeSize), instanceCount, baseVertexLocation, startInstanceLocation);
     }
 
     void MetalCommandList::setPipeline(const RenderPipeline *pipeline) {
@@ -2038,6 +2045,7 @@ namespace plume {
             }
             case MetalPipeline::Type::Graphics: {
                 const MetalGraphicsPipeline *graphicsPipeline = static_cast<const MetalGraphicsPipeline *>(interfacePipeline);
+                currentPrimitiveType = graphicsPipeline->state.primitiveType;
                 if (activeRenderState != &graphicsPipeline->state) {
                     activeRenderState = &graphicsPipeline->state;
                     dirtyGraphicsState.pipelineState = 1;
@@ -2080,11 +2088,11 @@ namespace plume {
         const RenderPushConstantRange &range = activeComputePipelineLayout->pushConstantRanges[rangeIndex];
         pushConstants.resize(activeComputePipelineLayout->pushConstantRanges.size());
         pushConstants[rangeIndex].data.resize(range.size);
-        memcpy(pushConstants[rangeIndex].data.data(), data, range.size);
+        memcpy(pushConstants[rangeIndex].data.data() + offset, data, size == 0 ? range.size : size);
         pushConstants[rangeIndex].binding = range.binding;
         pushConstants[rangeIndex].set = range.set;
-        pushConstants[rangeIndex].offset = range.offset + offset;
-        pushConstants[rangeIndex].size = alignUp(size == 0 ? range.size : size);
+        pushConstants[rangeIndex].offset = range.offset;
+        pushConstants[rangeIndex].size = range.size;
         pushConstants[rangeIndex].stageFlags = range.stageFlags;
 
         dirtyComputeState.pushConstants = 1;
@@ -2131,11 +2139,11 @@ namespace plume {
         const RenderPushConstantRange &range = activeGraphicsPipelineLayout->pushConstantRanges[rangeIndex];
         pushConstants.resize(activeGraphicsPipelineLayout->pushConstantRanges.size());
         pushConstants[rangeIndex].data.resize(range.size);
-        memcpy(pushConstants[rangeIndex].data.data(), data, range.size);
+        memcpy(pushConstants[rangeIndex].data.data() + offset, data, size == 0 ? range.size : size);
         pushConstants[rangeIndex].binding = range.binding;
         pushConstants[rangeIndex].set = range.set;
-        pushConstants[rangeIndex].offset = range.offset + offset;
-        pushConstants[rangeIndex].size = alignUp(size == 0 ? range.size : size);
+        pushConstants[rangeIndex].offset = range.offset;
+        pushConstants[rangeIndex].size = range.size;
         pushConstants[rangeIndex].stageFlags = range.stageFlags;
 
         dirtyGraphicsState.pushConstants = 1;
@@ -2174,6 +2182,7 @@ namespace plume {
             indexBuffer = interfaceBuffer->mtl;
             indexBufferOffset = view->buffer.offset;
             currentIndexType = mapIndexFormat(view->format);
+            indexTypeSize = currentIndexType == MTL::IndexTypeUInt32 ? sizeof(uint32_t) : sizeof(uint16_t);
         }
     }
 

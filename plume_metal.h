@@ -314,6 +314,7 @@ namespace plume {
         MTL::IndexType currentIndexType = MTL::IndexTypeUInt32;
         MTL::Buffer *indexBuffer = nullptr;
         uint32_t indexBufferOffset = 0;
+        uint32_t indexTypeSize = 0;
         uint32_t viewCount = 0;
 
         std::vector<MTL::Buffer *> vertexBuffers;
@@ -334,7 +335,6 @@ namespace plume {
         const MetalFramebuffer *targetFramebuffer = nullptr;
         const MetalPipelineLayout *activeComputePipelineLayout = nullptr;
         const MetalPipelineLayout *activeGraphicsPipelineLayout = nullptr;
-        const MetalGraphicsPipeline *activeGraphicsPipeline = nullptr;
         const MetalRenderState *activeRenderState = nullptr;
         const MetalComputeState *activeComputeState = nullptr;
         const MetalDescriptorSet* renderDescriptorSets[DESCRIPTOR_SET_MAX_INDEX + 1] = {};
