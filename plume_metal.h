@@ -209,6 +209,7 @@ namespace plume {
         std::vector<Descriptor> descriptors;
         MetalArgumentBuffer argumentBuffer;
         std::vector<ResourceEntry> resourceEntries;
+        std::vector<MTL::Resource *> toReleaseOnDestruction;
 
         MetalDescriptorSet(MetalDevice *device, const RenderDescriptorSetDesc &desc);
         MetalDescriptorSet(MetalDevice *device, uint32_t entryCount);
