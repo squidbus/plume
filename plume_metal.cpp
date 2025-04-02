@@ -1435,9 +1435,18 @@ namespace plume {
             // Set index right after push constants, clamp at Metal's limit of 31
             const uint32_t vertexBufferIndex = std::min(PUSH_CONSTANT_MAX_INDEX + 1 + inputSlot.index, VERTEX_BUFFER_MAX_INDEX);
             MTL::VertexBufferLayoutDescriptor *layout = vertexDescriptor->layouts()->object(vertexBufferIndex);
-            layout->setStride(inputSlot.stride);
-            layout->setStepFunction(mapVertexStepFunction(inputSlot.classification));
-            layout->setStepRate((layout->stepFunction() == MTL::VertexStepFunctionPerInstance) ? inputSlot.stride : 1);
+            if (inputSlot.stride == 0) {
+                // Metal does not support stride 0, we must provide a
+                // substitute "null" buffer to match behaviour of other robust APIs.
+                // hasNullBuffer = true;
+                layout->setStride(1);
+                layout->setStepFunction(MTL::VertexStepFunctionConstant);
+                layout->setStepRate(0);
+            } else {
+                layout->setStride(inputSlot.stride);
+                layout->setStepFunction(mapVertexStepFunction(inputSlot.classification));
+                layout->setStepRate((layout->stepFunction() == MTL::VertexStepFunctionPerInstance) ? inputSlot.stride : 1);
+            }
         }
 
         for (uint32_t i = 0; i < desc.inputElementsCount; i++) {
@@ -2319,8 +2328,13 @@ namespace plume {
             // Check for changes in bindings
             for (uint32_t i = 0; i < viewCount; i++) {
                 const MetalBuffer* interfaceBuffer = static_cast<const MetalBuffer*>(views[i].buffer.ref);
-                const uint64_t newOffset = views[i].buffer.offset;
+                uint64_t newOffset = views[i].buffer.offset;
                 const uint32_t newIndex = startSlot + i;
+
+                if (interfaceBuffer == nullptr) {
+                    interfaceBuffer = static_cast<const MetalBuffer*>(queue->device->nullBuffer.get());
+                    newOffset = 0;
+                }
 
                 vertexBuffers[i] = interfaceBuffer->mtl;
                 vertexBufferOffsets[i] = newOffset;
@@ -2959,10 +2973,21 @@ namespace plume {
         }
 
         if (dirtyGraphicsState.vertexBuffers) {
+            std::vector<bool> slotUsed(31, false);
+
             for (uint32_t i = 0; i < viewCount; i++) {
                 // Bind right after the push constants, up till the max vertex buffer index
                 const uint32_t bindIndex = std::min(PUSH_CONSTANT_MAX_INDEX + 1 + vertexBufferIndices[i], VERTEX_BUFFER_MAX_INDEX);
                 activeRenderEncoder->setVertexBuffer(vertexBuffers[i], vertexBufferOffsets[i], bindIndex);
+                slotUsed[bindIndex] = true;
+            }
+
+            // Bind all unbound slots to the null buffer
+            auto nullBuffer = static_cast<const MetalBuffer*>(queue->device->nullBuffer.get());
+            for (uint32_t i = PUSH_CONSTANT_MAX_INDEX + 1; i <= VERTEX_BUFFER_MAX_INDEX; i++) {
+                if (!slotUsed[i]) {
+                    activeRenderEncoder->setVertexBuffer(nullBuffer->mtl, 0, i);
+                }
             }
 
             stateCache.lastVertexBuffers = vertexBuffers;
@@ -3259,6 +3284,8 @@ namespace plume {
         capabilities.dynamicDepthBias = true;
         capabilities.uma = mtl->hasUnifiedMemory();
         capabilities.queryPools = false;
+
+        nullBuffer = createBuffer(RenderBufferDesc::DefaultBuffer(16, RenderBufferFlag::VERTEX));
     }
 
     MetalDevice::~MetalDevice() {
