@@ -70,6 +70,7 @@ namespace plume {
     struct RenderSampler;
     struct RenderShader;
     struct RenderTexture;
+    struct RenderTextureView;
     struct RenderQueryPool;
 
     // Enums.
@@ -700,6 +701,22 @@ namespace plume {
 
     constexpr bool RenderFormatIsStencil(RenderFormat format) {
         return format == RenderFormat::D32_FLOAT_S8_UINT;
+    }
+
+    constexpr RenderTextureViewDimension RenderTextureDimensionToView(const RenderTextureDimension dimension) {
+        switch (dimension) {
+            case RenderTextureDimension::UNKNOWN:
+                return RenderTextureViewDimension::UNKNOWN;
+            case RenderTextureDimension::TEXTURE_1D:
+                return RenderTextureViewDimension::TEXTURE_1D;
+            case RenderTextureDimension::TEXTURE_2D:
+                return RenderTextureViewDimension::TEXTURE_2D;
+            case RenderTextureDimension::TEXTURE_3D:
+                return RenderTextureViewDimension::TEXTURE_3D;
+            default:
+                assert(false && "Unknown texture dimension.");
+                return RenderTextureViewDimension::UNKNOWN;
+        }
     }
 
     // Concrete structs.
@@ -1701,8 +1718,10 @@ namespace plume {
 
     struct RenderFramebufferDesc {
         const RenderTexture **colorAttachments = nullptr;
+        const RenderTextureView **colorAttachmentViews = nullptr;
         uint32_t colorAttachmentsCount = 0;
         const RenderTexture *depthAttachment = nullptr;
+        const RenderTextureView *depthAttachmentView = nullptr;
         bool depthAttachmentReadOnly = false;
 
         RenderFramebufferDesc() = default;

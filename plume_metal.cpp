@@ -1210,7 +1210,7 @@ namespace plume {
         mtl->release();
     }
 
-    std::unique_ptr<RenderTextureView> MetalTexture::createTextureView(const RenderTextureViewDesc &desc) {
+    std::unique_ptr<RenderTextureView> MetalTexture::createTextureView(const RenderTextureViewDesc &desc) const {
         return std::make_unique<MetalTextureView>(this, desc);
     }
 
@@ -1224,7 +1224,7 @@ namespace plume {
         return lhs == static_cast<RenderTextureDimension>(rhs);
     }
 
-    MetalTextureView::MetalTextureView(MetalTexture *texture, const RenderTextureViewDesc &desc) {
+    MetalTextureView::MetalTextureView(const MetalTexture *texture, const RenderTextureViewDesc &desc) {
         assert(texture != nullptr);
 
         const uint32_t mipLevels = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
@@ -1756,7 +1756,7 @@ namespace plume {
         mtl->release();
     }
 
-    std::unique_ptr<RenderTextureView> MetalDrawable::createTextureView(const RenderTextureViewDesc& desc) {
+    std::unique_ptr<RenderTextureView> MetalDrawable::createTextureView(const RenderTextureViewDesc& desc) const {
         assert(false && "Drawables don't support texture views");
     }
 

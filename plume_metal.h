@@ -462,7 +462,7 @@ namespace plume {
         MetalDrawable() = default;
         MetalDrawable(MetalDevice *device, MetalPool *pool, const RenderTextureDesc &desc);
         ~MetalDrawable() override;
-        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) override;
+        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
         void setName(const std::string &name) override;
         MTL::Texture* getTexture() const override { return mtl->texture(); }
     };
@@ -476,7 +476,7 @@ namespace plume {
         MetalTexture() = default;
         MetalTexture(const MetalDevice *device, MetalPool *pool, const RenderTextureDesc &desc);
         ~MetalTexture() override;
-        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) override;
+        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
         void setName(const std::string &name) override;
         MTL::Texture* getTexture() const override { return mtl; }
     };
@@ -484,7 +484,7 @@ namespace plume {
     struct MetalTextureView : RenderTextureView {
         MTL::Texture *texture = nullptr;
 
-        MetalTextureView(MetalTexture *texture, const RenderTextureViewDesc &desc);
+        MetalTextureView(const MetalTexture *texture, const RenderTextureViewDesc &desc);
         ~MetalTextureView() override;
     };
 
