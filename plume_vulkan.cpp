@@ -278,16 +278,16 @@ namespace plume {
         }
     }
 
-    static VkImageViewType toImageViewType(RenderTextureViewDimension dimension) {
+    static VkImageViewType toImageViewType(RenderTextureViewDimension dimension, uint16_t arraySize) {
         switch (dimension) {
         case RenderTextureViewDimension::TEXTURE_1D:
-            return VK_IMAGE_VIEW_TYPE_1D;
+            return arraySize > 1 ? VK_IMAGE_VIEW_TYPE_1D_ARRAY : VK_IMAGE_VIEW_TYPE_1D;
         case RenderTextureViewDimension::TEXTURE_2D:
-            return VK_IMAGE_VIEW_TYPE_2D;
+            return arraySize > 1 ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D;
         case RenderTextureViewDimension::TEXTURE_3D:
             return VK_IMAGE_VIEW_TYPE_3D;
         case RenderTextureViewDimension::TEXTURE_CUBE:
-            return VK_IMAGE_VIEW_TYPE_CUBE;
+            return arraySize > 6 ? VK_IMAGE_VIEW_TYPE_CUBE_ARRAY : VK_IMAGE_VIEW_TYPE_CUBE;
         default:
             assert(false && "Unknown resource dimension.");
             return VK_IMAGE_VIEW_TYPE_MAX_ENUM;
@@ -1014,13 +1014,13 @@ namespace plume {
     void VulkanTexture::setName(const std::string &name) {
         setObjectName(device->vk, VK_DEBUG_REPORT_OBJECT_TYPE_IMAGE_EXT, uint64_t(vk), name);
     }
-    
+
     void VulkanTexture::fillSubresourceRange() {
         imageSubresourceRange.aspectMask = (desc.flags & RenderTextureFlag::DEPTH_TARGET) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
         imageSubresourceRange.baseMipLevel = 0;
         imageSubresourceRange.levelCount = desc.mipLevels;
         imageSubresourceRange.baseArrayLayer = 0;
-        imageSubresourceRange.layerCount = 1;
+        imageSubresourceRange.layerCount = desc.arraySize;
     }
 
     // VulkanTextureView
@@ -1031,11 +1031,14 @@ namespace plume {
         assert(desc.arrayIndex < texture->desc.arraySize);
 
         this->texture = texture;
+        this->desc = desc;
+
+        const uint32_t layerCount = std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex);
 
         VkImageViewCreateInfo viewInfo = {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = texture->vk;
-        viewInfo.viewType = toImageViewType(desc.dimension);
+        viewInfo.viewType = toImageViewType(desc.dimension, layerCount);
         viewInfo.format = toVk(desc.format);
         viewInfo.components.r = toVk(desc.componentMapping.r);
         viewInfo.components.g = toVk(desc.componentMapping.g);
@@ -1045,7 +1048,7 @@ namespace plume {
         viewInfo.subresourceRange.baseMipLevel = desc.mipSlice;
         viewInfo.subresourceRange.levelCount = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
         viewInfo.subresourceRange.baseArrayLayer = desc.arrayIndex;
-        viewInfo.subresourceRange.layerCount = std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex);
+        viewInfo.subresourceRange.layerCount = layerCount;
 
         VkResult res = vkCreateImageView(texture->device->vk, &viewInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
@@ -2440,10 +2443,22 @@ namespace plume {
         std::vector<VkImageView> imageViews;
         VkAttachmentReference depthReference = {};
         for (uint32_t i = 0; i < desc.colorAttachmentsCount; i++) {
-            const VulkanTexture *colorAttachment = static_cast<const VulkanTexture *>(desc.colorAttachments[i]);
+            const VulkanTexture *colorAttachment;
+            VkImageView colorAttachmentImageView;
+            RenderFormat colorAttachmentFormat;
+            if (desc.colorAttachmentViews && desc.colorAttachmentViews[i]) {
+                const VulkanTextureView* colorAttachmentView = static_cast<const VulkanTextureView *>(desc.colorAttachmentViews[i]);
+                colorAttachment = colorAttachmentView->texture;
+                colorAttachmentImageView = colorAttachmentView->vk;
+                colorAttachmentFormat = colorAttachmentView->desc.format;
+            } else {
+                colorAttachment = static_cast<const VulkanTexture *>(desc.colorAttachments[i]);
+                colorAttachmentImageView = colorAttachment->imageView;
+                colorAttachmentFormat = colorAttachment->desc.format;
+            }
             assert((colorAttachment->desc.flags & RenderTextureFlag::RENDER_TARGET) && "Color attachment must be a render target.");
             colorAttachments.emplace_back(colorAttachment);
-            imageViews.emplace_back(colorAttachment->imageView);
+            imageViews.emplace_back(colorAttachmentImageView);
 
             if (i == 0) {
                 width = uint32_t(colorAttachment->desc.width);
@@ -2456,7 +2471,7 @@ namespace plume {
             colorReferences.emplace_back(reference);
 
             VkAttachmentDescription attachment = {};
-            attachment.format = toVk(colorAttachment->desc.format);
+            attachment.format = toVk(colorAttachmentFormat);
             attachment.samples = VkSampleCountFlagBits(colorAttachment->desc.multisampling.sampleCount);
             attachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
             attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2467,10 +2482,21 @@ namespace plume {
             attachments.emplace_back(attachment);
         }
 
-        if (desc.depthAttachment != nullptr) {
-            depthAttachment = static_cast<const VulkanTexture *>(desc.depthAttachment);
+        if (desc.depthAttachment != nullptr || desc.depthAttachmentView != nullptr) {
+            VkImageView depthAttachmentImageView;
+            RenderFormat depthAttachmentFormat;
+            if (desc.depthAttachmentView != nullptr) {
+                const VulkanTextureView* depthAttachmentView = static_cast<const VulkanTextureView *>(desc.depthAttachmentView);
+                depthAttachment = depthAttachmentView->texture;
+                depthAttachmentImageView = depthAttachmentView->vk;
+                depthAttachmentFormat = depthAttachmentView->desc.format;
+            } else {
+                depthAttachment = static_cast<const VulkanTexture *>(desc.depthAttachment);
+                depthAttachmentImageView = depthAttachment->imageView;
+                depthAttachmentFormat = depthAttachment->desc.format;
+            }
             assert((depthAttachment->desc.flags & RenderTextureFlag::DEPTH_TARGET) && "Depth attachment must be a depth target.");
-            imageViews.emplace_back(depthAttachment->imageView);
+            imageViews.emplace_back(depthAttachmentImageView);
 
             if (desc.colorAttachmentsCount == 0) {
                 width = uint32_t(depthAttachment->desc.width);
@@ -2484,7 +2510,7 @@ namespace plume {
             // We prefer to just ignore this potential hazard on older Vulkan versions as it just seems to be an edge case for some hardware.
             const bool preferNoneForReadOnly = desc.depthAttachmentReadOnly && device->loadStoreOpNoneSupported;
             VkAttachmentDescription attachment = {};
-            attachment.format = toVk(depthAttachment->desc.format);
+            attachment.format = toVk(depthAttachmentFormat);
             attachment.samples = VkSampleCountFlagBits(depthAttachment->desc.multisampling.sampleCount);
             attachment.loadOp = preferNoneForReadOnly ? VK_ATTACHMENT_LOAD_OP_NONE_EXT : VK_ATTACHMENT_LOAD_OP_LOAD;
             attachment.storeOp = preferNoneForReadOnly ? VK_ATTACHMENT_STORE_OP_NONE_EXT : VK_ATTACHMENT_STORE_OP_STORE;

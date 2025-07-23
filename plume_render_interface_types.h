@@ -73,6 +73,7 @@ namespace plume {
     struct RenderSampler;
     struct RenderShader;
     struct RenderTexture;
+    struct RenderTextureView;
     struct RenderQueryPool;
 
     // Enums.
@@ -1661,8 +1662,10 @@ namespace plume {
 
     struct RenderFramebufferDesc {
         const RenderTexture **colorAttachments = nullptr;
+        const RenderTextureView **colorAttachmentViews = nullptr;
         uint32_t colorAttachmentsCount = 0;
         const RenderTexture *depthAttachment = nullptr;
+        const RenderTextureView *depthAttachmentView = nullptr;
         bool depthAttachmentReadOnly = false;
 
         RenderFramebufferDesc() = default;

@@ -102,6 +102,7 @@ namespace plume {
     struct VulkanTextureView : RenderTextureView {
         VkImageView vk = VK_NULL_HANDLE;
         VulkanTexture *texture = nullptr;
+        RenderTextureViewDesc desc;
 
         VulkanTextureView(VulkanTexture *texture, const RenderTextureViewDesc &desc);
         ~VulkanTextureView() override;
