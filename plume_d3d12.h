@@ -177,6 +177,7 @@ namespace plume {
         const D3D12GraphicsPipeline *activeGraphicsPipeline = nullptr;
         bool descriptorHeapsSet = false;
         D3D12_PRIMITIVE_TOPOLOGY activeTopology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+        uint32_t activeStencilRef = 0;
         bool activeSamplePositions = false;
 
         D3D12CommandList(D3D12CommandQueue *queue);
@@ -206,7 +207,7 @@ namespace plume {
         void setFramebuffer(const RenderFramebuffer *framebuffer) override;
         void setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) override;
         void clearColor(uint32_t attachmentIndex, RenderColor colorValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
-        void clearDepth(bool clearDepth, float depthValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
+        void clearDepthStencil(bool clearDepth, bool clearStencil, float depthValue, uint32_t stencilValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
         void copyBufferRegion(RenderBufferReference dstBuffer, RenderBufferReference srcBuffer, uint64_t size) override;
         void copyTextureRegion(const RenderTextureCopyLocation &dstLocation, const RenderTextureCopyLocation &srcLocation, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const RenderBox *srcBox) override;
         void copyBuffer(const RenderBuffer *dstBuffer, const RenderBuffer *srcBuffer) override;
@@ -221,6 +222,7 @@ namespace plume {
         void checkDescriptorHeaps();
         void notifyDescriptorHeapWasChangedExternally();
         void checkTopology();
+        void checkStencilRef();
         void checkFramebufferSamplePositions();
         void setSamplePositions(const RenderTexture *texture);
         void resetSamplePositions();
@@ -393,6 +395,7 @@ namespace plume {
         ID3D12PipelineState *d3d = nullptr;
         std::vector<RenderInputSlot> inputSlots;
         D3D12_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+        uint32_t stencilRef = 0;
 
         D3D12GraphicsPipeline(D3D12Device *device, const RenderGraphicsPipelineDesc &desc);
         ~D3D12GraphicsPipeline() override;
