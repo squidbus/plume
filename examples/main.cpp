@@ -38,6 +38,7 @@ namespace plume {
 
     static const uint32_t BufferCount = 2;
     static const RenderFormat SwapchainFormat = RenderFormat::B8G8R8A8_UNORM;
+    static const RenderFormat DepthFormat = RenderFormat::D32_FLOAT_S8_UINT;
 
     struct TestContext {
         const RenderInterface *m_renderInterface = nullptr;
@@ -57,6 +58,8 @@ namespace plume {
         std::unique_ptr<RenderPipeline> m_pipeline;
         std::unique_ptr<RenderPipelineLayout> m_pipelineLayout;
         std::unique_ptr<RenderBuffer> m_vertexBuffer;
+        std::unique_ptr<RenderTexture> m_depthAttachment;
+        std::unique_ptr<RenderTexture> m_depthAttachment2;
         RenderVertexBufferView m_vertexBufferView;
         RenderInputSlot m_inputSlot;
     };
@@ -66,14 +69,26 @@ namespace plume {
     void createFramebuffers(TestContext& ctx) {
         // Create framebuffers for each swap chain image
         ctx.m_framebuffers.clear();
-        
+
+        RenderTextureDesc desc;
+        desc.dimension = RenderTextureDimension::TEXTURE_2D;
+        desc.width = ctx.m_swapChain->getWidth();
+        desc.height = ctx.m_swapChain->getHeight();
+        desc.depth = 1;
+        desc.mipLevels = 1;
+        desc.arraySize = 1;
+        desc.format = DepthFormat;
+        desc.flags = RenderTextureFlag::DEPTH_TARGET;
+        ctx.m_depthAttachment = ctx.m_device->createTexture(desc);
+        ctx.m_depthAttachment2 = ctx.m_device->createTexture(desc);
+
         for (uint32_t i = 0; i < ctx.m_swapChain->getTextureCount(); i++) {
             const RenderTexture* colorAttachment = ctx.m_swapChain->getTexture(i);
             
             RenderFramebufferDesc fbDesc;
             fbDesc.colorAttachments = &colorAttachment;
             fbDesc.colorAttachmentsCount = 1;
-            fbDesc.depthAttachment = nullptr;
+            fbDesc.depthAttachment = ctx.m_depthAttachment.get();
             
             auto framebuffer = ctx.m_device->createFramebuffer(fbDesc);
             ctx.m_framebuffers.push_back(std::move(framebuffer));
@@ -138,6 +153,16 @@ namespace plume {
         pipelineDesc.renderTargetBlend[0] = RenderBlendDesc::Copy();
         pipelineDesc.renderTargetCount = 1;
         pipelineDesc.primitiveTopology = RenderPrimitiveTopology::TRIANGLE_LIST;
+        pipelineDesc.depthTargetFormat = DepthFormat;
+        pipelineDesc.depthEnabled = true;
+        pipelineDesc.depthWriteEnabled = true;
+        pipelineDesc.depthFunction = RenderComparisonFunction::ALWAYS;
+        pipelineDesc.stencilEnabled = true;
+        pipelineDesc.stencilFrontFace.compareFunction = RenderComparisonFunction::ALWAYS;
+        pipelineDesc.stencilFrontFace.passOp = RenderStencilOp::REPLACE;
+        pipelineDesc.stencilBackFace.compareFunction = RenderComparisonFunction::ALWAYS;
+        pipelineDesc.stencilBackFace.passOp = RenderStencilOp::REPLACE;
+        pipelineDesc.stencilReference = 0xBE;
         
         ctx.m_pipeline = ctx.m_device->createGraphicsPipeline(pipelineDesc);
     }
@@ -261,6 +286,9 @@ namespace plume {
         // Clear with a dark blue color
         RenderColor clearColor(0.0f, 0.0f, 0.2f, 1.0f);
         ctx.m_commandList->clearColor(0, clearColor);
+
+        ctx.m_commandList->copyTexture(ctx.m_depthAttachment2.get(), ctx.m_depthAttachment.get());
+        ctx.m_commandList->clearDepthStencil(true, true);
         
         // Bind the pipeline and vertex buffer
         ctx.m_commandList->setGraphicsPipelineLayout(ctx.m_pipelineLayout.get());
