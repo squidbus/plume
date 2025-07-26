@@ -71,6 +71,7 @@ namespace plume {
             uint64_t value = 0;
             struct {
                 uint64_t depthClear: 1;
+                uint64_t stencilClear: 1;
                 uint64_t msaaCount: 4;
                 uint64_t colorFormat0: 7;
                 uint64_t colorFormat1: 7;
@@ -185,6 +186,7 @@ namespace plume {
         MTL::DepthClipMode depthClipMode = MTL::DepthClipModeClip;
         MTL::Winding winding = MTL::WindingClockwise;
         MTL::PrimitiveType primitiveType = MTL::PrimitiveTypeTriangle;
+        uint32_t stencilReference = 0;
         float depthBiasConstantFactor;
         float depthBiasClamp;
         float depthBiasSlopeFactor;
@@ -376,7 +378,7 @@ namespace plume {
         void setFramebuffer(const RenderFramebuffer *framebuffer) override;
         void setDepthBias(float depthBias, float depthBiasClamp, float slopeScaledDepthBias) override;
         void clearColor(uint32_t attachmentIndex, RenderColor colorValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
-        void clearDepth(bool clearDepth, float depthValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
+        void clearDepthStencil(bool clearDepth, bool clearStencil, float depthValue, uint32_t stencilValue, const RenderRect *clearRects, uint32_t clearRectsCount) override;
         void copyBufferRegion(RenderBufferReference dstBuffer, RenderBufferReference srcBuffer, uint64_t size) override;
         void copyTextureRegion(const RenderTextureCopyLocation &dstLocation, const RenderTextureCopyLocation &srcLocation, uint32_t dstX, uint32_t dstY, uint32_t dstZ, const RenderBox *srcBox) override;
         void copyBuffer(const RenderBuffer *dstBuffer, const RenderBuffer *srcBuffer) override;
@@ -580,6 +582,9 @@ namespace plume {
         MTL::Function* clearVertexFunction;
         MTL::Function* clearColorFunction;
         MTL::Function* clearDepthFunction;
+        MTL::Function* clearStencilFunction;
+        MTL::DepthStencilState *clearDepthState;
+        MTL::DepthStencilState *clearStencilState;
         MTL::DepthStencilState *clearDepthStencilState;
 
         std::mutex clearPipelineStateMutex;
@@ -621,7 +626,7 @@ namespace plume {
         void createResolvePipelineState();
         void createClearShaderLibrary();
 
-        MTL::RenderPipelineState* getOrCreateClearRenderPipelineState(MTL::RenderPipelineDescriptor *pipelineDesc, bool depthWriteEnabled = false);
+        MTL::RenderPipelineState* getOrCreateClearRenderPipelineState(MTL::RenderPipelineDescriptor *pipelineDesc, bool depthWriteEnabled = false, bool stencilWriteEnabled = false);
     };
 
     struct MetalInterface : RenderInterface {

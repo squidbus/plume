@@ -42,7 +42,7 @@ namespace plume {
         return (n + alignment - 1) & ~(alignment - 1);
     }
 
-    uint64_t createClearPipelineKey(MTL::RenderPipelineDescriptor *pipelineDesc, bool depthWriteEnabled) {
+    uint64_t createClearPipelineKey(MTL::RenderPipelineDescriptor *pipelineDesc, bool depthWriteEnabled, bool stencilWriteEnabled) {
         auto colorFormat = [&](uint32_t index) {
             if (auto colorAttachment = pipelineDesc->colorAttachments()->object(index)) {
                 return static_cast<uint64_t>(mapRenderFormat(colorAttachment->pixelFormat()));
@@ -53,6 +53,7 @@ namespace plume {
         ClearPipelineKey key;
         key.value = 0;
         key.depthClear = depthWriteEnabled ? 1 : 0;
+        key.stencilClear = stencilWriteEnabled ? 1 : 0;
         key.msaaCount = pipelineDesc->sampleCount();
         key.colorFormat0 = colorFormat(0);
         key.colorFormat1 = colorFormat(1);
@@ -220,6 +221,8 @@ namespace plume {
                     return RenderFormat::R16G16_SINT;
                 case MTL::PixelFormatDepth32Float:
                     return RenderFormat::D32_FLOAT;
+                case MTL::PixelFormatDepth32Float_Stencil8:
+                    return RenderFormat::D32_FLOAT_S8_UINT;
                 case MTL::PixelFormatR32Float:
                     return RenderFormat::R32_FLOAT;
                 case MTL::PixelFormatR32Uint:
@@ -357,6 +360,8 @@ namespace plume {
                 return MTL::PixelFormatR32Float;
             case RenderFormat::D32_FLOAT:
                 return MTL::PixelFormatDepth32Float;
+            case RenderFormat::D32_FLOAT_S8_UINT:
+                return MTL::PixelFormatDepth32Float_Stencil8;
             case RenderFormat::R32_FLOAT:
                 return MTL::PixelFormatR32Float;
             case RenderFormat::R32_UINT:
@@ -713,6 +718,30 @@ namespace plume {
             default:
                 assert(false && "Unknown comparison function.");
                 return MTL::CompareFunctionNever;
+        }
+    }
+
+    MTL::StencilOperation mapStencilOperation(RenderStencilOp stencilOp) {
+        switch (stencilOp) {
+            case RenderStencilOp::KEEP:
+                return MTL::StencilOperationKeep;
+            case RenderStencilOp::ZERO:
+                return MTL::StencilOperationZero;
+            case RenderStencilOp::REPLACE:
+                return MTL::StencilOperationReplace;
+            case RenderStencilOp::INCREMENT_AND_CLAMP:
+                return MTL::StencilOperationIncrementClamp;
+            case RenderStencilOp::DECREMENT_AND_CLAMP:
+                return MTL::StencilOperationDecrementClamp;
+            case RenderStencilOp::INVERT:
+                return MTL::StencilOperationInvert;
+            case RenderStencilOp::INCREMENT_AND_WRAP:
+                return MTL::StencilOperationIncrementWrap;
+            case RenderStencilOp::DECREMENT_AND_WRAP:
+                return MTL::StencilOperationDecrementWrap;
+            default:
+                assert(false && "Unknown stencil operation.");
+                return MTL::StencilOperationKeep;
         }
     }
 
@@ -1362,6 +1391,9 @@ namespace plume {
         descriptor->setRasterSampleCount(desc.multisampling.sampleCount);
         descriptor->setAlphaToCoverageEnabled(desc.alphaToCoverageEnabled);
         descriptor->setDepthAttachmentPixelFormat(mapPixelFormat(desc.depthTargetFormat));
+        if (RenderFormatIsStencil(desc.depthTargetFormat)) {
+            descriptor->setStencilAttachmentPixelFormat(descriptor->depthAttachmentPixelFormat());
+        }
         descriptor->setRasterSampleCount(desc.multisampling.sampleCount);
 
         assert(desc.vertexShader != nullptr && "Cannot create a valid MTLRenderPipelineState without a vertex shader!");
@@ -1422,10 +1454,33 @@ namespace plume {
 
         // State variables, initialized here to be reused in encoder re-binding
         MTL::DepthStencilDescriptor *depthStencilDescriptor = MTL::DepthStencilDescriptor::alloc()->init();
+        MTL::StencilDescriptor *frontFaceStencilDescriptor = nullptr;
+        MTL::StencilDescriptor *backFaceStencilDescriptor = nullptr;
 
         if (desc.depthTargetFormat != RenderFormat::UNKNOWN) {
             depthStencilDescriptor->setDepthWriteEnabled(desc.depthWriteEnabled);
             depthStencilDescriptor->setDepthCompareFunction(desc.depthEnabled ? mapCompareFunction(desc.depthFunction) : MTL::CompareFunctionAlways);
+
+            if (desc.stencilEnabled) {
+                frontFaceStencilDescriptor = MTL::StencilDescriptor::alloc()->init();
+                frontFaceStencilDescriptor->setStencilFailureOperation(mapStencilOperation(desc.stencilFrontFace.failOp));
+                frontFaceStencilDescriptor->setDepthFailureOperation(mapStencilOperation(desc.stencilFrontFace.depthFailOp));
+                frontFaceStencilDescriptor->setDepthStencilPassOperation(mapStencilOperation(desc.stencilFrontFace.passOp));
+                frontFaceStencilDescriptor->setStencilCompareFunction(mapCompareFunction(desc.stencilFrontFace.compareFunction));
+                frontFaceStencilDescriptor->setReadMask(desc.stencilReadMask);
+                frontFaceStencilDescriptor->setWriteMask(desc.stencilWriteMask);
+
+                backFaceStencilDescriptor = MTL::StencilDescriptor::alloc()->init();
+                backFaceStencilDescriptor->setStencilFailureOperation(mapStencilOperation(desc.stencilBackFace.failOp));
+                backFaceStencilDescriptor->setDepthFailureOperation(mapStencilOperation(desc.stencilBackFace.depthFailOp));
+                backFaceStencilDescriptor->setDepthStencilPassOperation(mapStencilOperation(desc.stencilBackFace.passOp));
+                backFaceStencilDescriptor->setStencilCompareFunction(mapCompareFunction(desc.stencilBackFace.compareFunction));
+                backFaceStencilDescriptor->setReadMask(desc.stencilReadMask);
+                backFaceStencilDescriptor->setWriteMask(desc.stencilWriteMask);
+
+                depthStencilDescriptor->setFrontFaceStencil(frontFaceStencilDescriptor);
+                depthStencilDescriptor->setBackFaceStencil(backFaceStencilDescriptor);
+            }
         }
 
         NS::Error *error = nullptr;
@@ -1435,6 +1490,7 @@ namespace plume {
         state.winding = MTL::WindingClockwise;
         state.renderPipelineState = device->mtl->newRenderPipelineState(descriptor, &error);
         state.primitiveType = mapPrimitiveType(desc.primitiveTopology);
+        state.stencilReference = desc.stencilEnabled ? desc.stencilReference : 0;
 
         if (desc.dynamicDepthBiasEnabled) {
             state.dynamicDepthBiasEnabled = true;
@@ -1455,6 +1511,12 @@ namespace plume {
         vertexFunction->release();
         descriptor->release();
         depthStencilDescriptor->release();
+        if (frontFaceStencilDescriptor) {
+            frontFaceStencilDescriptor->release();
+        }
+        if (backFaceStencilDescriptor) {
+            backFaceStencilDescriptor->release();
+        }
         releasePool->release();
     }
 
@@ -2310,6 +2372,9 @@ namespace plume {
         // Set pixel format for depth attachment if we have one, with write disabled
         if (targetFramebuffer->depthAttachment != nullptr) {
             pipelineDesc->setDepthAttachmentPixelFormat(targetFramebuffer->depthAttachment->mtl->pixelFormat());
+            if (RenderFormatIsStencil(targetFramebuffer->depthAttachment->desc.format)) {
+                pipelineDesc->setStencilAttachmentPixelFormat(pipelineDesc->depthAttachmentPixelFormat());
+            }
             MTL::DepthStencilDescriptor *depthStencilDescriptor = MTL::DepthStencilDescriptor::alloc()->init();
             depthStencilDescriptor->setDepthWriteEnabled(false);
             const MTL::DepthStencilState *depthStencilState = device->mtl->newDepthStencilState(depthStencilDescriptor);
@@ -2363,12 +2428,12 @@ namespace plume {
         pool->release();
     }
 
-    void MetalCommandList::clearDepth(const bool clearDepth, const float depthValue, const RenderRect *clearRects, const uint32_t clearRectsCount) {
+    void MetalCommandList::clearDepthStencil(const bool clearDepth, const bool clearStencil, const float depthValue, const uint32_t stencilValue, const RenderRect *clearRects, const uint32_t clearRectsCount) {
         assert(targetFramebuffer != nullptr);
         assert(targetFramebuffer->depthAttachment != nullptr);
         assert((!clearRects || clearRectsCount <= MAX_CLEAR_RECTS) && "Too many clear rects");
 
-        if (clearDepth) {
+        if (clearDepth || clearStencil) {
             checkActiveRenderEncoder();
 
             NS::AutoreleasePool* pool = NS::AutoreleasePool::alloc()->init();
@@ -2383,6 +2448,9 @@ namespace plume {
             pipelineDesc->setVertexFunction(device->clearVertexFunction);
             pipelineDesc->setFragmentFunction(device->clearDepthFunction);
             pipelineDesc->setDepthAttachmentPixelFormat(targetFramebuffer->depthAttachment->mtl->pixelFormat());
+            if (RenderFormatIsStencil(targetFramebuffer->depthAttachment->desc.format)) {
+                pipelineDesc->setStencilAttachmentPixelFormat(pipelineDesc->depthAttachmentPixelFormat());
+            }
             pipelineDesc->setRasterSampleCount(targetFramebuffer->depthAttachment->desc.multisampling.sampleCount);
 
             // Set color attachment pixel formats with write disabled
@@ -2392,9 +2460,15 @@ namespace plume {
                 pipelineColorAttachment->setWriteMask(MTL::ColorWriteMaskNone);
             }
 
-            const MTL::RenderPipelineState *pipelineState = device->getOrCreateClearRenderPipelineState(pipelineDesc, true);
+            const MTL::RenderPipelineState *pipelineState = device->getOrCreateClearRenderPipelineState(pipelineDesc, clearDepth, clearStencil);
             activeRenderEncoder->setRenderPipelineState(pipelineState);
-            activeRenderEncoder->setDepthStencilState(device->clearDepthStencilState);
+            if (clearDepth && clearStencil) {
+                activeRenderEncoder->setDepthStencilState(device->clearDepthStencilState);
+            } else if (clearDepth) {
+                activeRenderEncoder->setDepthStencilState(device->clearDepthState);
+            } else {
+                activeRenderEncoder->setDepthStencilState(device->clearStencilState);
+            }
 
             setCommonClearState();
             pipelineDesc->release();
@@ -2781,6 +2855,13 @@ namespace plume {
                 depthAttachment->setTexture(targetFramebuffer->depthAttachment->mtl);
                 depthAttachment->setLoadAction(MTL::LoadActionLoad);
                 depthAttachment->setStoreAction(MTL::StoreActionStore);
+
+                if (RenderFormatIsStencil(targetFramebuffer->depthAttachment->desc.format)) {
+                    MTL::RenderPassStencilAttachmentDescriptor *stencilAttachment = renderDescriptor->stencilAttachment();
+                    stencilAttachment->setTexture(targetFramebuffer->depthAttachment->mtl);
+                    stencilAttachment->setLoadAction(MTL::LoadActionLoad);
+                    stencilAttachment->setStoreAction(MTL::StoreActionStore);
+                }
             }
 
             if (targetFramebuffer->sampleCount > 1) {
@@ -2803,6 +2884,7 @@ namespace plume {
                 activeRenderEncoder->setDepthClipMode(activeRenderState->depthClipMode);
                 activeRenderEncoder->setCullMode(activeRenderState->cullMode);
                 activeRenderEncoder->setFrontFacingWinding(activeRenderState->winding);
+                activeRenderEncoder->setStencilReferenceValue(activeRenderState->stencilReference);
                 stateCache.lastPipelineState = activeRenderState->renderPipelineState;
             }
             dirtyGraphicsState.pipelineState = 0;
@@ -3365,18 +3447,32 @@ namespace plume {
         clearColorFunction = clearShaderLibrary->newFunction(MTLSTR("clearColorFrag"));
         clearDepthFunction = clearShaderLibrary->newFunction(MTLSTR("clearDepthFrag"));
 
-        // Create depth stencil state
+        // Create depth stencil clear states
+        MTL::StencilDescriptor *stencilDescriptor = MTL::StencilDescriptor::alloc()->init();
+        stencilDescriptor->setDepthStencilPassOperation(MTL::StencilOperationReplace);
+        stencilDescriptor->setStencilCompareFunction(MTL::CompareFunctionAlways);
+        stencilDescriptor->setWriteMask(0xFFFFFFFF);
+
         MTL::DepthStencilDescriptor *depthDescriptor = MTL::DepthStencilDescriptor::alloc()->init();
+
         depthDescriptor->setDepthWriteEnabled(true);
         depthDescriptor->setDepthCompareFunction(MTL::CompareFunctionAlways);
+        clearDepthState = mtl->newDepthStencilState(depthDescriptor);
+
+        depthDescriptor->setBackFaceStencil(stencilDescriptor);
+        depthDescriptor->setFrontFaceStencil(stencilDescriptor);
         clearDepthStencilState = mtl->newDepthStencilState(depthDescriptor);
 
+        depthDescriptor->setDepthWriteEnabled(false);
+        clearStencilState = mtl->newDepthStencilState(depthDescriptor);
+
         depthDescriptor->release();
+        stencilDescriptor->release();
         clearShaderLibrary->release();
     }
 
-    MTL::RenderPipelineState* MetalDevice::getOrCreateClearRenderPipelineState(MTL::RenderPipelineDescriptor *pipelineDesc, const bool depthWriteEnabled) {
-        uint64_t pipelineKey = createClearPipelineKey(pipelineDesc, depthWriteEnabled);
+    MTL::RenderPipelineState* MetalDevice::getOrCreateClearRenderPipelineState(MTL::RenderPipelineDescriptor *pipelineDesc, const bool depthWriteEnabled, const bool stencilWriteEnabled) {
+        uint64_t pipelineKey = createClearPipelineKey(pipelineDesc, depthWriteEnabled, stencilWriteEnabled);
 
         std::lock_guard lock(clearPipelineStateMutex);
         const auto it = clearRenderPipelineStates.find(pipelineKey);
