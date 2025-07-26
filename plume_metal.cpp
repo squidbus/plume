@@ -1227,11 +1227,14 @@ namespace plume {
     MetalTextureView::MetalTextureView(MetalTexture *texture, const RenderTextureViewDesc &desc) {
         assert(texture != nullptr);
 
+        const uint32_t mipLevels = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
+        const uint32_t arraySize = std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex);
+
         this->texture = texture->mtl->newTextureView(
             mapPixelFormat(desc.format),
-            mapTextureViewType(desc.dimension, texture->desc.multisampling.sampleCount, texture->desc.arraySize),
-            { desc.mipSlice, std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice) },
-            { desc.arrayIndex, std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex) },
+            mapTextureViewType(desc.dimension, texture->desc.multisampling.sampleCount, arraySize),
+            { desc.mipSlice, mipLevels },
+            { desc.arrayIndex, arraySize },
             mapTextureSwizzleChannels(desc.componentMapping)
         );
     }

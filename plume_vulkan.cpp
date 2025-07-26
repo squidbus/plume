@@ -1058,7 +1058,7 @@ namespace plume {
         imageSubresourceRange.baseMipLevel = 0;
         imageSubresourceRange.levelCount = desc.mipLevels;
         imageSubresourceRange.baseArrayLayer = 0;
-        imageSubresourceRange.layerCount = 1;
+        imageSubresourceRange.layerCount = desc.arraySize;
     }
 
     // VulkanTextureView
@@ -1070,10 +1070,13 @@ namespace plume {
 
         this->texture = texture;
 
+        const uint32_t mipLevels = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
+        const uint32_t arraySize = std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex);
+
         VkImageViewCreateInfo viewInfo = {};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         viewInfo.image = texture->vk;
-        viewInfo.viewType = toImageViewType(desc.dimension, texture->desc.arraySize);
+        viewInfo.viewType = toImageViewType(desc.dimension, arraySize);
         viewInfo.format = toVk(desc.format);
         viewInfo.components.r = toVk(desc.componentMapping.r);
         viewInfo.components.g = toVk(desc.componentMapping.g);
@@ -1081,9 +1084,9 @@ namespace plume {
         viewInfo.components.a = toVk(desc.componentMapping.a);
         viewInfo.subresourceRange.aspectMask = toViewAspectFlags(texture->desc.flags);
         viewInfo.subresourceRange.baseMipLevel = desc.mipSlice;
-        viewInfo.subresourceRange.levelCount = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
+        viewInfo.subresourceRange.levelCount = mipLevels;
         viewInfo.subresourceRange.baseArrayLayer = desc.arrayIndex;
-        viewInfo.subresourceRange.layerCount = std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex);
+        viewInfo.subresourceRange.layerCount = arraySize;
 
         VkResult res = vkCreateImageView(texture->device->vk, &viewInfo, nullptr, &vk);
         if (res != VK_SUCCESS) {
