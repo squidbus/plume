@@ -1646,7 +1646,7 @@ namespace plume {
     }
 
     void D3D12Framebuffer::createDepthStencilHeap(const D3D12Texture* texture, const D3D12TextureView* textureView, const bool readOnly) {
-        const uint32_t targetAllocatorOffset = device->depthTargetHeapAllocator->allocate(2);
+        const uint32_t targetAllocatorOffset = device->depthTargetHeapAllocator->allocate(1);
         if (targetAllocatorOffset == D3D12DescriptorHeapAllocator::INVALID_OFFSET) {
             fprintf(stderr, "Allocator was unable to find free space for the set.");
             return;
