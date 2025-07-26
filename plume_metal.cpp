@@ -1758,6 +1758,7 @@ namespace plume {
 
     std::unique_ptr<RenderTextureView> MetalDrawable::createTextureView(const RenderTextureViewDesc& desc) {
         assert(false && "Drawables don't support texture views");
+        return nullptr;
     }
 
     void MetalDrawable::setName(const std::string &name) {
