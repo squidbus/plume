@@ -1106,18 +1106,40 @@ namespace plume {
                 const bool isMSAA = (interfaceTextureView->texture->desc.multisampling.sampleCount > RenderSampleCount::COUNT_1);
                 switch (interfaceTextureView->dimension) {
                 case RenderTextureViewDimension::TEXTURE_1D:
-                    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1D;
-                    srvDesc.Texture1D.MipLevels = interfaceTextureView->mipLevels;
-                    srvDesc.Texture1D.MostDetailedMip = interfaceTextureView->mipSlice;
+                    if (interfaceTextureView->arraySize > 1) {
+                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1DARRAY;
+                        srvDesc.Texture1DArray.MipLevels = interfaceTextureView->mipLevels;
+                        srvDesc.Texture1DArray.MostDetailedMip = interfaceTextureView->mipSlice;
+                        srvDesc.Texture1DArray.FirstArraySlice = interfaceTextureView->arrayIndex;
+                        srvDesc.Texture1DArray.ArraySize = interfaceTextureView->arraySize;
+                    } else {
+                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE1D;
+                        srvDesc.Texture1D.MipLevels = interfaceTextureView->mipLevels;
+                        srvDesc.Texture1D.MostDetailedMip = interfaceTextureView->mipSlice;
+                    }
                     break;
                 case RenderTextureViewDimension::TEXTURE_2D:
                     if (isMSAA) {
-                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
+                        if (interfaceTextureView->arraySize > 1) {
+                            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY;
+                            srvDesc.Texture2DMSArray.FirstArraySlice = interfaceTextureView->arrayIndex;
+                            srvDesc.Texture2DMSArray.ArraySize = interfaceTextureView->arraySize;
+                        } else {
+                            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
+                        }
                     }
                     else {
-                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
-                        srvDesc.Texture2D.MipLevels = interfaceTextureView->mipLevels;
-                        srvDesc.Texture2D.MostDetailedMip = interfaceTextureView->mipSlice;
+                        if (interfaceTextureView->arraySize > 1) {
+                            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DARRAY;
+                            srvDesc.Texture2DArray.MipLevels = interfaceTextureView->mipLevels;
+                            srvDesc.Texture2DArray.MostDetailedMip = interfaceTextureView->mipSlice;
+                            srvDesc.Texture2DArray.FirstArraySlice = interfaceTextureView->arrayIndex;
+                            srvDesc.Texture2DArray.ArraySize = interfaceTextureView->arraySize;
+                        } else {
+                            srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+                            srvDesc.Texture2D.MipLevels = interfaceTextureView->mipLevels;
+                            srvDesc.Texture2D.MostDetailedMip = interfaceTextureView->mipSlice;
+                        }
                     }
 
                     break;
@@ -1127,9 +1149,17 @@ namespace plume {
                     srvDesc.Texture3D.MostDetailedMip = interfaceTextureView->mipSlice;
                     break;
                 case RenderTextureViewDimension::TEXTURE_CUBE:
-                    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
-                    srvDesc.TextureCube.MipLevels = interfaceTextureView->mipLevels;
-                    srvDesc.TextureCube.MostDetailedMip = interfaceTextureView->mipSlice;
+                    if (interfaceTextureView->arraySize > 6) {
+                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBEARRAY;
+                        srvDesc.TextureCubeArray.MipLevels = interfaceTextureView->mipLevels;
+                        srvDesc.TextureCubeArray.MostDetailedMip = interfaceTextureView->mipSlice;
+                        srvDesc.TextureCubeArray.First2DArrayFace = interfaceTextureView->arrayIndex;
+                        srvDesc.TextureCubeArray.NumCubes = interfaceTextureView->arraySize / 6;
+                    } else {
+                        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURECUBE;
+                        srvDesc.TextureCube.MipLevels = interfaceTextureView->mipLevels;
+                        srvDesc.TextureCube.MostDetailedMip = interfaceTextureView->mipSlice;
+                    }
                     break;
                 default:
                     assert(false && "Unknown texture dimension.");
@@ -1159,12 +1189,26 @@ namespace plume {
 
                 switch (interfaceTextureView->dimension) {
                 case RenderTextureViewDimension::TEXTURE_1D:
-                    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1D;
-                    uavDesc.Texture1D.MipSlice = interfaceTextureView->mipSlice;
+                    if (interfaceTextureView->arraySize > 1) {
+                        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1DARRAY;
+                        uavDesc.Texture1DArray.MipSlice = interfaceTextureView->mipSlice;
+                        uavDesc.Texture1DArray.FirstArraySlice = interfaceTextureView->arrayIndex;
+                        uavDesc.Texture1DArray.ArraySize = interfaceTextureView->arraySize;
+                    } else {
+                        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE1D;
+                        uavDesc.Texture1D.MipSlice = interfaceTextureView->mipSlice;
+                    }
                     break;
                 case RenderTextureViewDimension::TEXTURE_2D:
-                    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-                    uavDesc.Texture2D.MipSlice = interfaceTextureView->mipSlice;
+                    if (interfaceTextureView->arraySize > 1) {
+                        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+                        uavDesc.Texture2DArray.MipSlice = interfaceTextureView->mipSlice;
+                        uavDesc.Texture2DArray.FirstArraySlice = interfaceTextureView->arrayIndex;
+                        uavDesc.Texture2DArray.ArraySize = interfaceTextureView->arraySize;
+                    } else {
+                        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+                        uavDesc.Texture2D.MipSlice = interfaceTextureView->mipSlice;
+                    }
                     break;
                 case RenderTextureViewDimension::TEXTURE_3D:
                     uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
