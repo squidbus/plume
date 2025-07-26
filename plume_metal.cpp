@@ -1704,7 +1704,6 @@ namespace plume {
     }
 
     MetalSwapChain::~MetalSwapChain() {
-        layer->release();
     }
 
     bool MetalSwapChain::present(const uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, const uint32_t waitSemaphoreCount) {
