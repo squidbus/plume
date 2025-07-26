@@ -321,14 +321,9 @@ namespace plume {
         uint32_t arraySize = 0;
         uint32_t arrayIndex = 0;
         uint32_t shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        uint32_t targetAllocatorOffset = 0;
-        uint32_t targetEntryCount = 0;
-        bool targetHeapDepth = false;
 
         D3D12TextureView(const D3D12Texture *texture, const RenderTextureViewDesc &desc);
         ~D3D12TextureView() override;
-
-        void createRenderTargetHeap();
     };
 
     struct D3D12AccelerationStructure :RenderAccelerationStructure {
