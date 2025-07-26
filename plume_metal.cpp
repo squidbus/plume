@@ -1957,7 +1957,7 @@ namespace plume {
         depthAttachmentReadOnly = desc.depthAttachmentReadOnly;
 
         for (uint32_t i = 0; i < desc.colorAttachmentsCount; i++) {
-            const MetalTextureView *colorAttachmentView = desc.colorAttachmentViews ? static_cast<const MetalTextureView *>(desc.colorAttachmentViews[i]) : nullptr;
+            const MetalTextureView *colorAttachmentView = desc.colorAttachmentViews && desc.colorAttachmentViews[i] ? static_cast<const MetalTextureView *>(desc.colorAttachmentViews[i]) : nullptr;
             const MetalTexture *colorAttachment = colorAttachmentView ? colorAttachmentView->parentTexture : static_cast<const MetalTexture *>(desc.colorAttachments[i]);
             assert((colorAttachment->desc.flags & RenderTextureFlag::RENDER_TARGET) && "Color attachment must be a render target.");
 

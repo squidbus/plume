@@ -1493,7 +1493,7 @@ namespace plume {
         
         if (desc.colorAttachmentsCount > 0) {
             for (uint32_t i = 0; i < desc.colorAttachmentsCount; i++) {
-                const D3D12TextureView *interfaceTextureView = desc.colorAttachmentViews ? static_cast<const D3D12TextureView *>(desc.colorAttachmentViews[i]) : nullptr;
+                const D3D12TextureView *interfaceTextureView = desc.colorAttachmentViews && desc.colorAttachmentViews[i] ? static_cast<const D3D12TextureView *>(desc.colorAttachmentViews[i]) : nullptr;
                 const D3D12Texture *interfaceTexture = interfaceTextureView ? interfaceTextureView->texture : static_cast<const D3D12Texture *>(desc.colorAttachments[i]);
                 assert((interfaceTexture->desc.flags & RenderTextureFlag::RENDER_TARGET) && "Color attachment must be a render target.");
                 createRenderTargetHeap(interfaceTexture, interfaceTextureView);
