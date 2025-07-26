@@ -118,12 +118,10 @@ namespace plume {
         bool hasAttachments = false;
 
         for (const auto& attachment : targetFramebuffer->colorAttachments) {
-            if (attachment) {
-                if (const auto texture = attachment->getTexture()) {
-                    maxWidth = std::min(static_cast<NS::UInteger>(maxWidth), texture->width());
-                    maxHeight = std::min(static_cast<NS::UInteger>(maxHeight), texture->height());
-                    hasAttachments = true;
-                }
+            if (const auto texture = attachment.getTexture()) {
+                maxWidth = std::min(static_cast<NS::UInteger>(maxWidth), texture->width());
+                maxHeight = std::min(static_cast<NS::UInteger>(maxHeight), texture->height());
+                hasAttachments = true;
             }
         }
 
@@ -1227,6 +1225,9 @@ namespace plume {
     MetalTextureView::MetalTextureView(const MetalTexture *texture, const RenderTextureViewDesc &desc) {
         assert(texture != nullptr);
 
+        this->parentTexture = texture;
+        this->desc = desc;
+
         const uint32_t mipLevels = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
         const uint32_t arraySize = std::min(desc.arraySize, texture->desc.arraySize - desc.arrayIndex);
 
@@ -1940,6 +1941,12 @@ namespace plume {
         dstHeight = attributes.height;
     }
 
+    // MetalAttachment
+
+    MTL::Texture* MetalAttachment::getTexture() const {
+        return textureView ? textureView->texture : texture->getTexture();
+    }
+
     // MetalFramebuffer
 
     MetalFramebuffer::MetalFramebuffer(const MetalDevice *device, const RenderFramebufferDesc &desc) {
@@ -1950,9 +1957,19 @@ namespace plume {
         depthAttachmentReadOnly = desc.depthAttachmentReadOnly;
 
         for (uint32_t i = 0; i < desc.colorAttachmentsCount; i++) {
-            const MetalTexture *colorAttachment = static_cast<const MetalTexture *>(desc.colorAttachments[i]);
+            const MetalTextureView *colorAttachmentView = desc.colorAttachmentViews ? static_cast<const MetalTextureView *>(desc.colorAttachmentViews[i]) : nullptr;
+            const MetalTexture *colorAttachment = colorAttachmentView ? colorAttachmentView->parentTexture : static_cast<const MetalTexture *>(desc.colorAttachments[i]);
             assert((colorAttachment->desc.flags & RenderTextureFlag::RENDER_TARGET) && "Color attachment must be a render target.");
-            colorAttachments.emplace_back(colorAttachment);
+
+            MetalAttachment attachment;
+            attachment.texture = colorAttachment;
+            attachment.textureView = colorAttachmentView;
+            attachment.format = colorAttachmentView ? colorAttachmentView->desc.format : colorAttachment->desc.format;
+            attachment.width = colorAttachment->desc.width;
+            attachment.height = colorAttachment->desc.height;
+            attachment.depth = colorAttachment->desc.depth;
+            attachment.sampleCount = colorAttachment->desc.multisampling.sampleCount;
+            colorAttachments.emplace_back(attachment);
 
             if (i == 0) {
                 width = colorAttachment->desc.width;
@@ -1960,13 +1977,22 @@ namespace plume {
             }
         }
 
-        if (desc.depthAttachment != nullptr) {
-            depthAttachment = static_cast<const MetalTexture *>(desc.depthAttachment);
-            assert((depthAttachment->desc.flags & RenderTextureFlag::DEPTH_TARGET) && "Depth attachment must be a depth target.");
+        if (desc.depthAttachment != nullptr || desc.depthAttachmentView != nullptr) {
+            const MetalTextureView *depthAttachmentView = desc.depthAttachmentView ? static_cast<const MetalTextureView *>(desc.depthAttachmentView) : nullptr;
+            const MetalTexture *interfaceDepthAttachment = depthAttachmentView ? depthAttachmentView->parentTexture : static_cast<const MetalTexture *>(desc.depthAttachment);
+            assert((interfaceDepthAttachment->desc.flags & RenderTextureFlag::DEPTH_TARGET) && "Depth attachment must be a depth target.");
+
+            depthAttachment.texture = interfaceDepthAttachment;
+            depthAttachment.textureView = depthAttachmentView;
+            depthAttachment.format = depthAttachmentView ? depthAttachmentView->desc.format : interfaceDepthAttachment->desc.format;
+            depthAttachment.width = interfaceDepthAttachment->desc.width;
+            depthAttachment.height = interfaceDepthAttachment->desc.height;
+            depthAttachment.depth = interfaceDepthAttachment->desc.depth;
+            depthAttachment.sampleCount = interfaceDepthAttachment->desc.multisampling.sampleCount;
 
             if (desc.colorAttachmentsCount == 0) {
-                width = depthAttachment->desc.width;
-                height = depthAttachment->desc.height;
+                width = interfaceDepthAttachment->desc.width;
+                height = interfaceDepthAttachment->desc.height;
             }
         }
 
@@ -2377,16 +2403,16 @@ namespace plume {
         MTL::RenderPipelineDescriptor* pipelineDesc = MTL::RenderPipelineDescriptor::alloc()->init();
         pipelineDesc->setVertexFunction(device->clearVertexFunction);
         pipelineDesc->setFragmentFunction(device->clearColorFunction);
-        pipelineDesc->setRasterSampleCount(targetFramebuffer->colorAttachments[attachmentIndex]->desc.multisampling.sampleCount);
+        pipelineDesc->setRasterSampleCount(targetFramebuffer->colorAttachments[attachmentIndex].sampleCount);
 
         MTL::RenderPipelineColorAttachmentDescriptor *pipelineColorAttachment = pipelineDesc->colorAttachments()->object(attachmentIndex);
-        pipelineColorAttachment->setPixelFormat(targetFramebuffer->colorAttachments[attachmentIndex]->getTexture()->pixelFormat());
+        pipelineColorAttachment->setPixelFormat(targetFramebuffer->colorAttachments[attachmentIndex].getTexture()->pixelFormat());
         pipelineColorAttachment->setBlendingEnabled(false);
 
         // Set pixel format for depth attachment if we have one, with write disabled
-        if (targetFramebuffer->depthAttachment != nullptr) {
-            pipelineDesc->setDepthAttachmentPixelFormat(targetFramebuffer->depthAttachment->mtl->pixelFormat());
-            if (RenderFormatIsStencil(targetFramebuffer->depthAttachment->desc.format)) {
+        if (targetFramebuffer->depthAttachment.format != RenderFormat::UNKNOWN) {
+            pipelineDesc->setDepthAttachmentPixelFormat(targetFramebuffer->depthAttachment.getTexture()->pixelFormat());
+            if (RenderFormatIsStencil(targetFramebuffer->depthAttachment.format)) {
                 pipelineDesc->setStencilAttachmentPixelFormat(pipelineDesc->depthAttachmentPixelFormat());
             }
             MTL::DepthStencilDescriptor *depthStencilDescriptor = MTL::DepthStencilDescriptor::alloc()->init();
@@ -2444,7 +2470,7 @@ namespace plume {
 
     void MetalCommandList::clearDepthStencil(const bool clearDepth, const bool clearStencil, const float depthValue, const uint32_t stencilValue, const RenderRect *clearRects, const uint32_t clearRectsCount) {
         assert(targetFramebuffer != nullptr);
-        assert(targetFramebuffer->depthAttachment != nullptr);
+        assert(targetFramebuffer->depthAttachment.format != RenderFormat::UNKNOWN);
         assert((!clearRects || clearRectsCount <= MAX_CLEAR_RECTS) && "Too many clear rects");
 
         if (clearDepth || clearStencil) {
@@ -2461,16 +2487,16 @@ namespace plume {
             MTL::RenderPipelineDescriptor* pipelineDesc = MTL::RenderPipelineDescriptor::alloc()->init();
             pipelineDesc->setVertexFunction(device->clearVertexFunction);
             pipelineDesc->setFragmentFunction(device->clearDepthFunction);
-            pipelineDesc->setDepthAttachmentPixelFormat(targetFramebuffer->depthAttachment->mtl->pixelFormat());
-            if (RenderFormatIsStencil(targetFramebuffer->depthAttachment->desc.format)) {
+            pipelineDesc->setDepthAttachmentPixelFormat(targetFramebuffer->depthAttachment.getTexture()->pixelFormat());
+            if (RenderFormatIsStencil(targetFramebuffer->depthAttachment.format)) {
                 pipelineDesc->setStencilAttachmentPixelFormat(pipelineDesc->depthAttachmentPixelFormat());
             }
-            pipelineDesc->setRasterSampleCount(targetFramebuffer->depthAttachment->desc.multisampling.sampleCount);
+            pipelineDesc->setRasterSampleCount(targetFramebuffer->depthAttachment.sampleCount);
 
             // Set color attachment pixel formats with write disabled
             for (uint32_t j = 0; j < targetFramebuffer->colorAttachments.size(); j++) {
                 MTL::RenderPipelineColorAttachmentDescriptor *pipelineColorAttachment = pipelineDesc->colorAttachments()->object(j);
-                pipelineColorAttachment->setPixelFormat(targetFramebuffer->colorAttachments[j]->getTexture()->pixelFormat());
+                pipelineColorAttachment->setPixelFormat(targetFramebuffer->colorAttachments[j].getTexture()->pixelFormat());
                 pipelineColorAttachment->setWriteMask(MTL::ColorWriteMaskNone);
             }
 
@@ -2859,20 +2885,20 @@ namespace plume {
 
             for (uint32_t i = 0; i < targetFramebuffer->colorAttachments.size(); i++) {
                 MTL::RenderPassColorAttachmentDescriptor *colorAttachment = renderDescriptor->colorAttachments()->object(i);
-                colorAttachment->setTexture(targetFramebuffer->colorAttachments[i]->getTexture());
+                colorAttachment->setTexture(targetFramebuffer->colorAttachments[i].getTexture());
                 colorAttachment->setLoadAction(MTL::LoadActionLoad);
                 colorAttachment->setStoreAction(MTL::StoreActionStore);
             }
 
-            if (targetFramebuffer->depthAttachment != nullptr) {
+            if (targetFramebuffer->depthAttachment.format != RenderFormat::UNKNOWN) {
                 MTL::RenderPassDepthAttachmentDescriptor *depthAttachment = renderDescriptor->depthAttachment();
-                depthAttachment->setTexture(targetFramebuffer->depthAttachment->mtl);
+                depthAttachment->setTexture(targetFramebuffer->depthAttachment.getTexture());
                 depthAttachment->setLoadAction(MTL::LoadActionLoad);
                 depthAttachment->setStoreAction(MTL::StoreActionStore);
 
-                if (RenderFormatIsStencil(targetFramebuffer->depthAttachment->desc.format)) {
+                if (RenderFormatIsStencil(targetFramebuffer->depthAttachment.format)) {
                     MTL::RenderPassStencilAttachmentDescriptor *stencilAttachment = renderDescriptor->stencilAttachment();
-                    stencilAttachment->setTexture(targetFramebuffer->depthAttachment->mtl);
+                    stencilAttachment->setTexture(targetFramebuffer->depthAttachment.getTexture());
                     stencilAttachment->setLoadAction(MTL::LoadActionLoad);
                     stencilAttachment->setStoreAction(MTL::StoreActionStore);
                 }
