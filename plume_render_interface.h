@@ -23,7 +23,7 @@ namespace plume {
         virtual void *map(uint32_t subresource = 0, const RenderRange *readRange = nullptr) = 0;
         virtual void unmap(uint32_t subresource = 0, const RenderRange *writtenRange = nullptr) = 0;
         virtual std::unique_ptr<RenderBufferFormattedView> createBufferFormattedView(RenderFormat format) = 0;
-        virtual void setName(const std::string &name) = 0;
+        virtual void setName(const std::string &name) const = 0;
         virtual uint64_t getDeviceAddress() const = 0;
 
         // Concrete implementation shortcuts.
@@ -39,7 +39,7 @@ namespace plume {
     struct RenderTexture {
         virtual ~RenderTexture() { }
         virtual std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const = 0;
-        virtual void setName(const std::string &name) = 0;
+        virtual void setName(const std::string &name) const = 0;
     };
 
     struct RenderAccelerationStructure {
@@ -48,6 +48,7 @@ namespace plume {
 
     struct RenderShader {
         virtual ~RenderShader() { }
+        virtual void setName(const std::string& name) const = 0;
     };
 
     struct RenderSampler {

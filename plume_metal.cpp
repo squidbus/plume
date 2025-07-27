@@ -1131,7 +1131,7 @@ namespace plume {
         return std::make_unique<MetalBufferFormattedView>(this, format);
     }
 
-    void MetalBuffer::setName(const std::string &name) {
+    void MetalBuffer::setName(const std::string &name) const {
         const NS::String *label = NS::String::string(name.c_str(), NS::UTF8StringEncoding);
         mtl->setLabel(label);
     }
@@ -1212,7 +1212,7 @@ namespace plume {
         return std::make_unique<MetalTextureView>(this, desc);
     }
 
-    void MetalTexture::setName(const std::string &name) {
+    void MetalTexture::setName(const std::string &name) const {
         mtl->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
     }
 
@@ -1300,6 +1300,10 @@ namespace plume {
     MetalShader::~MetalShader() {
         functionName->release();
         library->release();
+    }
+
+    void MetalShader::setName(const std::string &name) const {
+        library->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
     }
 
     MTL::Function* MetalShader::createFunction(const RenderSpecConstant *specConstants, const uint32_t specConstantsCount) const {
@@ -1762,7 +1766,7 @@ namespace plume {
         return nullptr;
     }
 
-    void MetalDrawable::setName(const std::string &name) {
+    void MetalDrawable::setName(const std::string &name) const {
         mtl->texture()->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
     }
 

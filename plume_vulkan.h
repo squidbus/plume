@@ -63,7 +63,7 @@ namespace plume {
         void *map(uint32_t subresource, const RenderRange *readRange) override;
         void unmap(uint32_t subresource, const RenderRange *writtenRange) override;
         std::unique_ptr<RenderBufferFormattedView> createBufferFormattedView(RenderFormat format) override;
-        void setName(const std::string &name) override;
+        void setName(const std::string &name) const override;
         uint64_t getDeviceAddress() const override;
     };
 
@@ -95,7 +95,7 @@ namespace plume {
         ~VulkanTexture() override;
         void createImageView(VkFormat format);
         std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
-        void setName(const std::string &name) override;
+        void setName(const std::string &name) const override;
         void fillSubresourceRange();
     };
 
@@ -146,6 +146,7 @@ namespace plume {
 
         VulkanShader(VulkanDevice *device, const void *data, uint64_t size, const char *entryPointName, RenderShaderFormat format);
         ~VulkanShader() override;
+        virtual void setName(const std::string &name) const override;
     };
 
     struct VulkanSampler : RenderSampler {

@@ -283,7 +283,7 @@ namespace plume {
         void *map(uint32_t subresource, const RenderRange *readRange) override;
         void unmap(uint32_t subresource, const RenderRange *writtenRange) override;
         std::unique_ptr<RenderBufferFormattedView> createBufferFormattedView(RenderFormat format) override;
-        void setName(const std::string &name) override;
+        void setName(const std::string &name) const override;
         uint64_t getDeviceAddress() const override;
     };
 
@@ -308,7 +308,7 @@ namespace plume {
         D3D12Texture(D3D12Device *device, D3D12Pool *pool, const RenderTextureDesc &desc);
         ~D3D12Texture() override;
         std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
-        void setName(const std::string &name) override;
+        void setName(const std::string &name) const override;
     };
 
     struct D3D12TextureView : RenderTextureView {
@@ -356,6 +356,7 @@ namespace plume {
 
         D3D12Shader(D3D12Device *device, const void *data, uint64_t size, const char *entryPointName, RenderShaderFormat format);
         ~D3D12Shader() override;
+        virtual void setName(const std::string &name) const override;
     };
 
     struct D3D12Sampler : RenderSampler {
