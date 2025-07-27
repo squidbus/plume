@@ -2535,7 +2535,7 @@ namespace plume {
         return std::make_unique<D3D12BufferFormattedView>(this, format);
     }
 
-    void D3D12Buffer::setName(const std::string &name) {
+    void D3D12Buffer::setName(const std::string &name) const {
         setObjectName(d3d, name);
     }
 
@@ -2636,7 +2636,7 @@ namespace plume {
         return std::make_unique<D3D12TextureView>(this, desc);
     }
 
-    void D3D12Texture::setName(const std::string &name) {
+    void D3D12Texture::setName(const std::string &name) const {
         setObjectName(d3d, name);
     }
 
@@ -2811,6 +2811,10 @@ namespace plume {
     }
 
     D3D12Shader::~D3D12Shader() { }
+
+    void D3D12Shader::setName(const std::string &name) const {
+        // Nothing to set a name on.
+    }
 
     // D3D12Sampler
 
