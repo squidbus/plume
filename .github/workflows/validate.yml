@@ -94,12 +94,20 @@ jobs:
         with:
           name: plume-windows-${{ matrix.type }}
           path: |
-            cmake-build/${{ matrix.type }}/bin/triangle.exe
+            cmake-build/bin/plume_example.exe
 
       - name: Upload Linux Build
-        if: runner.os != 'Windows'
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: plume-linux-${{ matrix.type }}-${{ matrix.os }}
           path: |
-            cmake-build/bin/triangle
+            cmake-build/bin/plume_example
+
+      - name: Upload macOS Build
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: plume-macos-${{ matrix.type }}-${{ matrix.os }}
+          path: |
+            cmake-build/bin/plume_example

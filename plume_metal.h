@@ -193,7 +193,7 @@ namespace plume {
         bool dynamicDepthBiasEnabled;
     };
 
-    struct ExtendedRenderTexture: RenderTexture {
+    struct ExtendedRenderTexture : RenderTexture {
         RenderTextureDesc desc;
         virtual MTL::Texture* getTexture() const = 0;
     };
@@ -253,12 +253,24 @@ namespace plume {
         void getWindowSize(uint32_t &dstWidth, uint32_t &dstHeight) const;
     };
 
+    struct MetalAttachment {
+        const MetalTexture *texture = nullptr;
+        const MetalTextureView *textureView = nullptr;
+        RenderFormat format = RenderFormat::UNKNOWN;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t depth = 0;
+        uint32_t sampleCount = 0;
+
+        MTL::Texture* getTexture() const;
+    };
+
     struct MetalFramebuffer : RenderFramebuffer {
         bool depthAttachmentReadOnly = false;
         uint32_t width = 0;
         uint32_t height = 0;
-        std::vector<const ExtendedRenderTexture *> colorAttachments;
-        const MetalTexture *depthAttachment = nullptr;
+        std::vector<MetalAttachment> colorAttachments;
+        MetalAttachment depthAttachment;
 
         MTL::SamplePosition samplePositions[16] = {};
         uint32_t sampleCount = 0;
@@ -462,7 +474,7 @@ namespace plume {
         MetalDrawable() = default;
         MetalDrawable(MetalDevice *device, MetalPool *pool, const RenderTextureDesc &desc);
         ~MetalDrawable() override;
-        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) override;
+        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
         void setName(const std::string &name) override;
         MTL::Texture* getTexture() const override { return mtl->texture(); }
     };
@@ -476,15 +488,17 @@ namespace plume {
         MetalTexture() = default;
         MetalTexture(const MetalDevice *device, MetalPool *pool, const RenderTextureDesc &desc);
         ~MetalTexture() override;
-        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) override;
+        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
         void setName(const std::string &name) override;
         MTL::Texture* getTexture() const override { return mtl; }
     };
 
     struct MetalTextureView : RenderTextureView {
         MTL::Texture *texture = nullptr;
+        const MetalTexture *parentTexture = nullptr;
+        RenderTextureViewDesc desc;
 
-        MetalTextureView(MetalTexture *texture, const RenderTextureViewDesc &desc);
+        MetalTextureView(const MetalTexture *texture, const RenderTextureViewDesc &desc);
         ~MetalTextureView() override;
     };
 

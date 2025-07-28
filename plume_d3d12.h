@@ -33,6 +33,7 @@ namespace plume {
     struct D3D12Pool;
     struct D3D12PipelineLayout;
     struct D3D12Texture;
+    struct D3D12TextureView;
 
     struct D3D12DescriptorHeapAllocator {
         enum : uint32_t {
@@ -140,12 +141,17 @@ namespace plume {
         std::vector<const D3D12Texture *> colorTargets;
         const D3D12Texture *depthTarget = nullptr;
         std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> colorHandles;
+        std::vector<uint32_t> colorTargetAllocatorOffsets;
         D3D12_CPU_DESCRIPTOR_HANDLE depthHandle = {};
+        uint32_t depthTargetAllocatorOffset = D3D12DescriptorHeapAllocator::INVALID_OFFSET;
 
         D3D12Framebuffer(D3D12Device *device, const RenderFramebufferDesc &desc);
         ~D3D12Framebuffer() override;
         uint32_t getWidth() const override;
         uint32_t getHeight() const override;
+        void createRenderTargetHeap(const D3D12Texture* texture, const D3D12TextureView* textureView);
+        void createDepthStencilHeap(const D3D12Texture* texture, const D3D12TextureView* textureView, bool readOnly);
+        void releaseTargetHeap();
     };
 
     struct D3D12QueryPool : RenderQueryPool {
@@ -297,23 +303,18 @@ namespace plume {
         D3D12MA::Allocation *allocation = nullptr;
         D3D12Pool *pool = nullptr;
         RenderTextureDesc desc;
-        uint32_t targetAllocatorOffset = 0;
-        uint32_t targetEntryCount = 0;
-        bool targetHeapDepth = false;
 
         D3D12Texture() = default;
         D3D12Texture(D3D12Device *device, D3D12Pool *pool, const RenderTextureDesc &desc);
         ~D3D12Texture() override;
-        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) override;
+        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
         void setName(const std::string &name) override;
-        void createRenderTargetHeap();
-        void createDepthStencilHeap();
-        void releaseTargetHeap();
     };
 
     struct D3D12TextureView : RenderTextureView {
         DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
-        D3D12Texture *texture = nullptr;
+        const D3D12Texture *texture = nullptr;
+        RenderTextureViewDesc desc;
         RenderTextureViewDimension dimension = RenderTextureViewDimension::UNKNOWN;
         uint32_t mipLevels = 0;
         uint32_t mipSlice = 0;
@@ -321,7 +322,7 @@ namespace plume {
         uint32_t arrayIndex = 0;
         uint32_t shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
-        D3D12TextureView(D3D12Texture *texture, const RenderTextureViewDesc &desc);
+        D3D12TextureView(const D3D12Texture *texture, const RenderTextureViewDesc &desc);
         ~D3D12TextureView() override;
     };
 

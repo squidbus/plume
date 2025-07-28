@@ -1369,8 +1369,6 @@ namespace plume {
 
     D3D12SwapChain::~D3D12SwapChain() {
         for (uint32_t i = 0; i < textureCount; i++) {
-            textures[i].releaseTargetHeap();
-
             if (textures[i].d3d != nullptr) {
                 textures[i].d3d->Release();
                 textures[i].d3d = nullptr;
@@ -1404,7 +1402,6 @@ namespace plume {
         }
 
         for (uint32_t i = 0; i < textureCount; i++) {
-            textures[i].releaseTargetHeap();
             textures[i].d3d->Release();
             textures[i].d3d = nullptr;
         }
@@ -1458,7 +1455,6 @@ namespace plume {
             textures[i].desc.height = height;
             textures[i].resourceStates = D3D12_RESOURCE_STATE_PRESENT;
             textures[i].layout = RenderTextureLayout::PRESENT;
-            textures[i].createRenderTargetHeap();
         }
     }
 
@@ -1497,10 +1493,10 @@ namespace plume {
         
         if (desc.colorAttachmentsCount > 0) {
             for (uint32_t i = 0; i < desc.colorAttachmentsCount; i++) {
-                const D3D12Texture *interfaceTexture = static_cast<const D3D12Texture *>(desc.colorAttachments[i]);
+                const D3D12TextureView *interfaceTextureView = desc.colorAttachmentViews && desc.colorAttachmentViews[i] ? static_cast<const D3D12TextureView *>(desc.colorAttachmentViews[i]) : nullptr;
+                const D3D12Texture *interfaceTexture = interfaceTextureView ? interfaceTextureView->texture : static_cast<const D3D12Texture *>(desc.colorAttachments[i]);
                 assert((interfaceTexture->desc.flags & RenderTextureFlag::RENDER_TARGET) && "Color attachment must be a render target.");
-                colorTargets.emplace_back(interfaceTexture);
-                colorHandles.emplace_back(device->colorTargetHeapAllocator->getCPUHandleAt(interfaceTexture->targetAllocatorOffset));
+                createRenderTargetHeap(interfaceTexture, interfaceTextureView);
 
                 if (i == 0) {
                     width = interfaceTexture->desc.width;
@@ -1509,18 +1505,11 @@ namespace plume {
             }
         }
 
-        if (desc.depthAttachment != nullptr) {
-            const D3D12Texture *interfaceTexture = static_cast<const D3D12Texture *>(desc.depthAttachment);
+        if (desc.depthAttachment != nullptr || desc.depthAttachmentView != nullptr) {
+            const D3D12TextureView *interfaceTextureView = static_cast<const D3D12TextureView *>(desc.depthAttachmentView);
+            const D3D12Texture *interfaceTexture = interfaceTextureView ? interfaceTextureView->texture : static_cast<const D3D12Texture *>(desc.depthAttachment);
             assert((interfaceTexture->desc.flags & RenderTextureFlag::DEPTH_TARGET) && "Depth attachment must be a depth target.");
-            depthTarget = interfaceTexture;
-
-            // The read-only handle is on the second slot on the DSV heap.
-            if (desc.depthAttachmentReadOnly) {
-                depthHandle = device->depthTargetHeapAllocator->getCPUHandleAt(interfaceTexture->targetAllocatorOffset + 1);
-            }
-            else {
-                depthHandle = device->depthTargetHeapAllocator->getCPUHandleAt(interfaceTexture->targetAllocatorOffset);
-            }
+            createDepthStencilHeap(interfaceTexture, interfaceTextureView, desc.depthAttachmentReadOnly);
 
             if (desc.colorAttachmentsCount == 0) {
                 width = interfaceTexture->desc.width;
@@ -1529,7 +1518,9 @@ namespace plume {
         }
     }
 
-    D3D12Framebuffer::~D3D12Framebuffer() { }
+    D3D12Framebuffer::~D3D12Framebuffer() {
+        releaseTargetHeap();
+    }
 
     uint32_t D3D12Framebuffer::getWidth() const {
         return width;
@@ -1537,6 +1528,237 @@ namespace plume {
 
     uint32_t D3D12Framebuffer::getHeight() const {
         return height;
+    }
+
+    void D3D12Framebuffer::createRenderTargetHeap(const D3D12Texture* texture, const D3D12TextureView* textureView) {
+        const uint32_t targetAllocatorOffset = device->colorTargetHeapAllocator->allocate(1);
+        if (targetAllocatorOffset == D3D12DescriptorHeapAllocator::INVALID_OFFSET) {
+            fprintf(stderr, "Allocator was unable to find free space for the set.");
+            return;
+        }
+
+        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
+        rtvDesc.Format = toDXGI(textureView ? textureView->desc.format : texture->desc.format);
+
+        const bool isMSAA = (texture->desc.multisampling.sampleCount > RenderSampleCount::COUNT_1);
+        if (textureView) {
+            switch (textureView->desc.dimension) {
+            case RenderTextureViewDimension::TEXTURE_1D:
+                if (texture->desc.arraySize > 1) {
+                    rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1DARRAY;
+                    rtvDesc.Texture1D.MipSlice = textureView->desc.mipSlice;
+                    rtvDesc.Texture1DArray.FirstArraySlice = textureView->desc.arrayIndex;
+                    rtvDesc.Texture1DArray.ArraySize = textureView->desc.arraySize;
+                } else {
+                    rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1D;
+                    rtvDesc.Texture1D.MipSlice = textureView->desc.mipSlice;
+                }
+                break;
+            case RenderTextureViewDimension::TEXTURE_2D:
+                if (texture->desc.arraySize > 1) {
+                    if (isMSAA) {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMSARRAY;
+                        rtvDesc.Texture2DMSArray.FirstArraySlice = textureView->desc.arrayIndex;
+                        rtvDesc.Texture2DMSArray.ArraySize = textureView->desc.arraySize;
+                    }
+                    else {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+                        rtvDesc.Texture2DArray.MipSlice = textureView->desc.mipSlice;
+                        rtvDesc.Texture2DArray.FirstArraySlice = textureView->desc.arrayIndex;
+                        rtvDesc.Texture2DArray.ArraySize = textureView->desc.arraySize;
+                    }
+                } else {
+                    if (isMSAA) {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
+                    }
+                    else {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+                        rtvDesc.Texture2D.MipSlice = textureView->desc.mipSlice;
+                    }
+                }
+
+                break;
+            case RenderTextureViewDimension::TEXTURE_3D:
+                rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
+                rtvDesc.Texture3D.MipSlice = textureView->desc.mipSlice;
+                rtvDesc.Texture3D.FirstWSlice = 0;
+                rtvDesc.Texture3D.WSize = 1;
+                break;
+            default:
+                assert(false && "Unsupported texture dimension for render target.");
+                break;
+            }
+        } else {
+            switch (texture->desc.dimension) {
+            case RenderTextureDimension::TEXTURE_1D:
+                if (texture->desc.arraySize > 1) {
+                    rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1DARRAY;
+                    rtvDesc.Texture1DArray.MipSlice = 0;
+                    rtvDesc.Texture1DArray.FirstArraySlice = 0;
+                    rtvDesc.Texture1DArray.ArraySize = texture->desc.arraySize;
+                } else {
+                    rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1D;
+                    rtvDesc.Texture1D.MipSlice = 0;
+                }
+                break;
+            case RenderTextureDimension::TEXTURE_2D:
+                if (texture->desc.arraySize > 1) {
+                    if (isMSAA) {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMSARRAY;
+                        rtvDesc.Texture2DMSArray.FirstArraySlice = 0;
+                        rtvDesc.Texture2DMSArray.ArraySize = texture->desc.arraySize;
+                    }
+                    else {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+                        rtvDesc.Texture2DArray.MipSlice = 0;
+                        rtvDesc.Texture2DArray.FirstArraySlice = 0;
+                        rtvDesc.Texture2DArray.ArraySize = texture->desc.arraySize;
+                    }
+                } else {
+                    if (isMSAA) {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
+                    }
+                    else {
+                        rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
+                        rtvDesc.Texture2D.MipSlice = 0;
+                    }
+                }
+
+                break;
+            case RenderTextureDimension::TEXTURE_3D:
+                rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
+                rtvDesc.Texture3D.MipSlice = 0;
+                rtvDesc.Texture3D.FirstWSlice = 0;
+                rtvDesc.Texture3D.WSize = 1;
+                break;
+            default:
+                assert(false && "Unsupported texture dimension for render target.");
+                break;
+            }
+        }
+
+        const D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = device->colorTargetHeapAllocator->getCPUHandleAt(targetAllocatorOffset);
+        device->d3d->CreateRenderTargetView(texture->d3d, &rtvDesc, cpuHandle);
+
+        colorTargets.emplace_back(texture);
+        colorHandles.emplace_back(cpuHandle);
+        colorTargetAllocatorOffsets.emplace_back(targetAllocatorOffset);
+    }
+
+    void D3D12Framebuffer::createDepthStencilHeap(const D3D12Texture* texture, const D3D12TextureView* textureView, const bool readOnly) {
+        const uint32_t targetAllocatorOffset = device->depthTargetHeapAllocator->allocate(1);
+        if (targetAllocatorOffset == D3D12DescriptorHeapAllocator::INVALID_OFFSET) {
+            fprintf(stderr, "Allocator was unable to find free space for the set.");
+            return;
+        }
+
+        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
+        dsvDesc.Format = toDXGIDepthStencilView(textureView ? textureView->desc.format : texture->desc.format);
+
+        const bool isMSAA = (texture->desc.multisampling.sampleCount > RenderSampleCount::COUNT_1);
+        if (textureView) {
+            switch (textureView->desc.dimension) {
+            case RenderTextureViewDimension::TEXTURE_1D:
+                if (texture->desc.arraySize > 1) {
+                    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1DARRAY;
+                    dsvDesc.Texture1D.MipSlice = textureView->desc.mipSlice;
+                    dsvDesc.Texture1DArray.FirstArraySlice = textureView->desc.arrayIndex;
+                    dsvDesc.Texture1DArray.ArraySize = textureView->desc.arraySize;
+                } else {
+                    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1D;
+                    dsvDesc.Texture1D.MipSlice = textureView->desc.mipSlice;
+                }
+                break;
+            case RenderTextureViewDimension::TEXTURE_2D:
+                if (texture->desc.arraySize > 1) {
+                    if (isMSAA) {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY;
+                        dsvDesc.Texture2DMSArray.FirstArraySlice = textureView->desc.arrayIndex;
+                        dsvDesc.Texture2DMSArray.ArraySize = textureView->desc.arraySize;
+                    }
+                    else {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+                        dsvDesc.Texture2DArray.MipSlice = textureView->desc.mipSlice;
+                        dsvDesc.Texture2DArray.FirstArraySlice = textureView->desc.arrayIndex;
+                        dsvDesc.Texture2DArray.ArraySize = textureView->desc.arraySize;
+                    }
+                } else {
+                    if (isMSAA) {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
+                    }
+                    else {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+                        dsvDesc.Texture2D.MipSlice = textureView->desc.mipSlice;
+                    }
+                }
+
+                break;
+            default:
+                assert(false && "Unsupported texture dimension for render target.");
+                break;
+            }
+        } else {
+            switch (texture->desc.dimension) {
+            case RenderTextureDimension::TEXTURE_1D:
+                if (texture->desc.arraySize > 1) {
+                    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1DARRAY;
+                    dsvDesc.Texture1DArray.MipSlice = 0;
+                    dsvDesc.Texture1DArray.FirstArraySlice = 0;
+                    dsvDesc.Texture1DArray.ArraySize = texture->desc.arraySize;
+                } else {
+                    dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1D;
+                    dsvDesc.Texture1D.MipSlice = 0;
+                }
+                break;
+            case RenderTextureDimension::TEXTURE_2D:
+                if (texture->desc.arraySize > 1) {
+                    if (isMSAA) {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMSARRAY;
+                        dsvDesc.Texture2DMSArray.FirstArraySlice = 0;
+                        dsvDesc.Texture2DMSArray.ArraySize = texture->desc.arraySize;
+                    }
+                    else {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DARRAY;
+                        dsvDesc.Texture2DArray.MipSlice = 0;
+                        dsvDesc.Texture2DArray.FirstArraySlice = 0;
+                        dsvDesc.Texture2DArray.ArraySize = texture->desc.arraySize;
+                    }
+                } else {
+                    if (isMSAA) {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
+                    }
+                    else {
+                        dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+                        dsvDesc.Texture2D.MipSlice = 0;
+                    }
+                }
+
+                break;
+            default:
+                assert(false && "Unsupported texture dimension for render target.");
+                break;
+            }
+        }
+
+        if (readOnly) {
+            dsvDesc.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
+        }
+
+        const D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = device->depthTargetHeapAllocator->getCPUHandleAt(targetAllocatorOffset);
+        device->d3d->CreateDepthStencilView(texture->d3d, &dsvDesc, cpuHandle);
+
+        depthTarget = texture;
+        depthHandle = cpuHandle;
+        depthTargetAllocatorOffset = targetAllocatorOffset;
+    }
+
+    void D3D12Framebuffer::releaseTargetHeap() {
+        for (const uint32_t targetAllocatorOffset : colorTargetAllocatorOffsets) {
+            device->colorTargetHeapAllocator->free(targetAllocatorOffset, 1);
+        }
+        if (depthTargetAllocatorOffset != D3D12DescriptorHeapAllocator::INVALID_OFFSET) {
+            device->depthTargetHeapAllocator->free(depthTargetAllocatorOffset, 1);
+        }
     }
 
     // D3D12QueryPool
@@ -2557,12 +2779,13 @@ namespace plume {
 
     // D3D12TextureView
 
-    D3D12TextureView::D3D12TextureView(D3D12Texture *texture, const RenderTextureViewDesc &desc) {
+    D3D12TextureView::D3D12TextureView(const D3D12Texture *texture, const RenderTextureViewDesc &desc) {
         assert(texture != nullptr);
         assert(desc.mipSlice < texture->desc.mipLevels);
         assert(desc.arrayIndex < texture->desc.arraySize);
 
         this->texture = texture;
+        this->desc = desc;
         this->format = toDXGITextureView(desc.format);
         this->dimension = desc.dimension;
         this->mipLevels = std::min(desc.mipLevels, texture->desc.mipLevels - desc.mipSlice);
@@ -2614,130 +2837,21 @@ namespace plume {
             fprintf(stderr, "CreateResource failed with error code 0x%lX.\n", res);
             return;
         }
-
-        if (renderTarget) {
-            createRenderTargetHeap();
-        }
-        else if (depthTarget) {
-            createDepthStencilHeap();
-        }
     }
 
     D3D12Texture::~D3D12Texture() {
-        releaseTargetHeap();
-
         if (allocation != nullptr) {
             d3d->Release();
             allocation->Release();
         }
     }
 
-    std::unique_ptr<RenderTextureView> D3D12Texture::createTextureView(const RenderTextureViewDesc &desc) {
+    std::unique_ptr<RenderTextureView> D3D12Texture::createTextureView(const RenderTextureViewDesc &desc) const {
         return std::make_unique<D3D12TextureView>(this, desc);
     }
 
     void D3D12Texture::setName(const std::string &name) {
         setObjectName(d3d, name);
-    }
-
-    void D3D12Texture::createRenderTargetHeap() {
-        targetAllocatorOffset = device->colorTargetHeapAllocator->allocate(1);
-        if (targetAllocatorOffset == D3D12DescriptorHeapAllocator::INVALID_OFFSET) {
-            fprintf(stderr, "Allocator was unable to find free space for the set.");
-            return;
-        }
-
-        targetEntryCount = 1;
-        targetHeapDepth = false;
-
-        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = {};
-        rtvDesc.Format = toDXGI(desc.format);
-
-        const bool isMSAA = (desc.multisampling.sampleCount > RenderSampleCount::COUNT_1);
-        switch (desc.dimension) {
-        case RenderTextureDimension::TEXTURE_1D:
-            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE1D;
-            rtvDesc.Texture1D.MipSlice = 0;
-            break;
-        case RenderTextureDimension::TEXTURE_2D:
-            if (isMSAA) {
-                rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
-            }
-            else {
-                rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
-                rtvDesc.Texture2D.MipSlice = 0;
-                rtvDesc.Texture2D.PlaneSlice = 0;
-            }
-
-            break;
-        case RenderTextureDimension::TEXTURE_3D:
-            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
-            rtvDesc.Texture3D.MipSlice = 0;
-            rtvDesc.Texture3D.FirstWSlice = 0;
-            rtvDesc.Texture3D.WSize = 1;
-            break;
-        default:
-            assert(false && "Unsupported texture dimension for render target.");
-            break;
-        }
-
-        const D3D12_CPU_DESCRIPTOR_HANDLE cpuHandle = device->colorTargetHeapAllocator->getCPUHandleAt(targetAllocatorOffset);
-        device->d3d->CreateRenderTargetView(d3d, &rtvDesc, cpuHandle);
-    }
-
-    void D3D12Texture::createDepthStencilHeap() {
-        targetAllocatorOffset = device->depthTargetHeapAllocator->allocate(2);
-        if (targetAllocatorOffset == D3D12DescriptorHeapAllocator::INVALID_OFFSET) {
-            fprintf(stderr, "Allocator was unable to find free space for the set.");
-            return;
-        }
-
-        targetEntryCount = 2;
-        targetHeapDepth = true;
-
-        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = {};
-        dsvDesc.Format = toDXGIDepthStencilView(desc.format);
-
-        const bool isMSAA = (desc.multisampling.sampleCount > RenderSampleCount::COUNT_1);
-        switch (desc.dimension) {
-        case RenderTextureDimension::TEXTURE_1D:
-            dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE1D;
-            dsvDesc.Texture1D.MipSlice = 0;
-            break;
-        case RenderTextureDimension::TEXTURE_2D:
-            if (isMSAA) {
-                dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
-            }
-            else {
-                dsvDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-                dsvDesc.Texture2D.MipSlice = 0;
-            }
-
-            break;
-        default:
-            assert(false && "Unsupported texture dimension for depth target.");
-            break;
-        }
-
-        const D3D12_CPU_DESCRIPTOR_HANDLE writeHandle = device->depthTargetHeapAllocator->getCPUHandleAt(targetAllocatorOffset);
-        const D3D12_CPU_DESCRIPTOR_HANDLE readOnlyHandle = device->depthTargetHeapAllocator->getCPUHandleAt(targetAllocatorOffset + 1);
-        device->d3d->CreateDepthStencilView(d3d, &dsvDesc, writeHandle);
-
-        dsvDesc.Flags = D3D12_DSV_FLAG_READ_ONLY_DEPTH;
-        device->d3d->CreateDepthStencilView(d3d, &dsvDesc, readOnlyHandle);
-    }
-
-    void D3D12Texture::releaseTargetHeap() {
-        if (targetEntryCount > 0) {
-            if (targetHeapDepth) {
-                device->depthTargetHeapAllocator->free(targetAllocatorOffset, targetEntryCount);
-            }
-            else {
-                device->colorTargetHeapAllocator->free(targetAllocatorOffset, targetEntryCount);
-            }
-
-            targetEntryCount = 0;
-        }
     }
 
     // D3D12AccelerationStructure

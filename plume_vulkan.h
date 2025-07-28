@@ -94,16 +94,17 @@ namespace plume {
         VulkanTexture(VulkanDevice *device, VkImage image);
         ~VulkanTexture() override;
         void createImageView(VkFormat format);
-        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) override;
+        std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) const override;
         void setName(const std::string &name) override;
         void fillSubresourceRange();
     };
 
     struct VulkanTextureView : RenderTextureView {
         VkImageView vk = VK_NULL_HANDLE;
-        VulkanTexture *texture = nullptr;
+        const VulkanTexture *texture = nullptr;
+        RenderTextureViewDesc desc;
 
-        VulkanTextureView(VulkanTexture *texture, const RenderTextureViewDesc &desc);
+        VulkanTextureView(const VulkanTexture *texture, const RenderTextureViewDesc &desc);
         ~VulkanTextureView() override;
     };
 
@@ -270,6 +271,7 @@ namespace plume {
         VkRenderPass renderPass = VK_NULL_HANDLE;
         std::vector<const VulkanTexture *> colorAttachments;
         const VulkanTexture *depthAttachment = nullptr;
+        std::unique_ptr<VulkanTextureView> depthAttachmentView = nullptr;
         bool depthAttachmentReadOnly = false;
         uint32_t width = 0;
         uint32_t height = 0;
