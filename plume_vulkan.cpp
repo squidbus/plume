@@ -911,7 +911,7 @@ namespace plume {
         return std::make_unique<VulkanBufferFormattedView>(this, format);
     }
 
-    void VulkanBuffer::setName(const std::string &name) const {
+    void VulkanBuffer::setName(const std::string &name) {
         setObjectName(device->vk, VK_OBJECT_TYPE_IMAGE, uint64_t(vk), name);
     }
 
@@ -1049,7 +1049,7 @@ namespace plume {
         return std::make_unique<VulkanTextureView>(this, desc);
     }
 
-    void VulkanTexture::setName(const std::string &name) const {
+    void VulkanTexture::setName(const std::string &name) {
         setObjectName(device->vk, VK_OBJECT_TYPE_IMAGE, uint64_t(vk), name);
     }
     
@@ -1299,7 +1299,7 @@ namespace plume {
         }
     }
 
-    void VulkanShader::setName(const std::string &name) const {
+    void VulkanShader::setName(const std::string &name) {
         setObjectName(device->vk, VK_OBJECT_TYPE_SHADER_MODULE, uint64_t(vk), name);
     }
 
@@ -1392,7 +1392,7 @@ namespace plume {
         }
     }
 
-    void VulkanComputePipeline::setName(const std::string& name) const {
+    void VulkanComputePipeline::setName(const std::string &name) {
         setObjectName(device->vk, VK_OBJECT_TYPE_PIPELINE, uint64_t(vk), name);
     }
 
@@ -1655,7 +1655,7 @@ namespace plume {
         }
     }
 
-    void VulkanGraphicsPipeline::setName(const std::string& name) const {
+    void VulkanGraphicsPipeline::setName(const std::string &name) {
         setObjectName(device->vk, VK_OBJECT_TYPE_PIPELINE, uint64_t(vk), name);
     }
 
@@ -1859,7 +1859,7 @@ namespace plume {
         }
     }
 
-    void VulkanRaytracingPipeline::setName(const std::string& name) const {
+    void VulkanRaytracingPipeline::setName(const std::string &name) {
         setObjectName(device->vk, VK_OBJECT_TYPE_PIPELINE, uint64_t(vk), name);
     }
 

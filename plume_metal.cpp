@@ -1133,7 +1133,7 @@ namespace plume {
         return std::make_unique<MetalBufferFormattedView>(this, format);
     }
 
-    void MetalBuffer::setName(const std::string &name) const {
+    void MetalBuffer::setName(const std::string &name) {
         const NS::String *label = NS::String::string(name.c_str(), NS::UTF8StringEncoding);
         mtl->setLabel(label);
     }
@@ -1214,7 +1214,7 @@ namespace plume {
         return std::make_unique<MetalTextureView>(this, desc);
     }
 
-    void MetalTexture::setName(const std::string &name) const {
+    void MetalTexture::setName(const std::string &name) {
         mtl->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
     }
 
@@ -1301,7 +1301,7 @@ namespace plume {
         library->release();
     }
 
-    void MetalShader::setName(const std::string &name) const {
+    void MetalShader::setName(const std::string &name) {
         library->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
     }
 
@@ -1400,7 +1400,7 @@ namespace plume {
         if (state.pipelineState) state.pipelineState->release();
     }
 
-    void MetalComputePipeline::setName(const std::string& name) const {
+    void MetalComputePipeline::setName(const std::string &name) {
         // TODO: New - setting name happens at descriptor level - this would have to be reworked
     }
 
@@ -1554,7 +1554,7 @@ namespace plume {
         if (state.depthStencilState) state.depthStencilState->release();
     }
 
-    void MetalGraphicsPipeline::setName(const std::string& name) const {
+    void MetalGraphicsPipeline::setName(const std::string &name) {
         // TODO: New - setting name happens at descriptor level - this would have to be reworked
     }
 
@@ -1765,7 +1765,7 @@ namespace plume {
         return nullptr;
     }
 
-    void MetalDrawable::setName(const std::string &name) const {
+    void MetalDrawable::setName(const std::string &name) {
         mtl->texture()->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
     }
 

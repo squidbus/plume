@@ -277,7 +277,7 @@ namespace plume {
         void *map(uint32_t subresource, const RenderRange *readRange) override;
         void unmap(uint32_t subresource, const RenderRange *writtenRange) override;
         std::unique_ptr<RenderBufferFormattedView> createBufferFormattedView(RenderFormat format) override;
-        void setName(const std::string &name) const override;
+        void setName(const std::string &name) override;
         uint64_t getDeviceAddress() const override;
     };
 
@@ -305,7 +305,7 @@ namespace plume {
         D3D12Texture(D3D12Device *device, D3D12Pool *pool, const RenderTextureDesc &desc);
         ~D3D12Texture() override;
         std::unique_ptr<RenderTextureView> createTextureView(const RenderTextureViewDesc &desc) override;
-        void setName(const std::string &name) const override;
+        void setName(const std::string &name) override;
         void createRenderTargetHeap();
         void createDepthStencilHeap();
         void releaseTargetHeap();
@@ -355,7 +355,7 @@ namespace plume {
 
         D3D12Shader(D3D12Device *device, const void *data, uint64_t size, const char *entryPointName, RenderShaderFormat format);
         ~D3D12Shader() override;
-        virtual void setName(const std::string &name) const override;
+        virtual void setName(const std::string &name) override;
     };
 
     struct D3D12Sampler : RenderSampler {
@@ -388,7 +388,7 @@ namespace plume {
 
         D3D12ComputePipeline(D3D12Device *device, const RenderComputePipelineDesc &desc);
         ~D3D12ComputePipeline() override;
-        virtual void setName(const std::string& name) const override;
+        virtual void setName(const std::string &name) override;
         virtual RenderPipelineProgram getProgram(const std::string &name) const override;
     };
 
@@ -400,7 +400,7 @@ namespace plume {
 
         D3D12GraphicsPipeline(D3D12Device *device, const RenderGraphicsPipelineDesc &desc);
         ~D3D12GraphicsPipeline() override;
-        virtual void setName(const std::string& name) const override;
+        virtual void setName(const std::string &name) override;
         virtual RenderPipelineProgram getProgram(const std::string &name) const override;
     };
 
@@ -413,7 +413,7 @@ namespace plume {
 
         D3D12RaytracingPipeline(D3D12Device *device, const RenderRaytracingPipelineDesc &desc, const RenderPipeline *previousPipeline);
         ~D3D12RaytracingPipeline() override;
-        virtual void setName(const std::string& name) const override;
+        virtual void setName(const std::string &name) override;
         virtual RenderPipelineProgram getProgram(const std::string &name) const override;
     };
 
