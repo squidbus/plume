@@ -209,6 +209,7 @@ namespace plume {
         std::vector<Descriptor> descriptors;
         MetalArgumentBuffer argumentBuffer;
         std::vector<ResourceEntry> resourceEntries;
+        std::vector<MTL::Resource *> toReleaseOnDestruction;
 
         MetalDescriptorSet(MetalDevice *device, const RenderDescriptorSetDesc &desc);
         MetalDescriptorSet(MetalDevice *device, uint32_t entryCount);
@@ -607,6 +608,8 @@ namespace plume {
 
         // Blit functionality
         MTL::BlitPassDescriptor *sharedBlitDescriptor = nullptr;
+
+        std::unique_ptr<RenderBuffer> nullBuffer;
 
         explicit MetalDevice(MetalInterface *renderInterface, const std::string &preferredDeviceName);
         ~MetalDevice() override;
