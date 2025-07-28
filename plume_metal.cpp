@@ -1433,7 +1433,6 @@ namespace plume {
             if (inputSlot.stride == 0) {
                 // Metal does not support stride 0, we must provide a
                 // substitute "null" buffer to match behaviour of other robust APIs.
-                // hasNullBuffer = true;
                 layout->setStride(1);
                 layout->setStepFunction(MTL::VertexStepFunctionConstant);
                 layout->setStepRate(0);
