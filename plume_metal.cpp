@@ -1955,6 +1955,8 @@ namespace plume {
         colorAttachments.reserve(desc.colorAttachmentsCount);
         depthAttachmentReadOnly = desc.depthAttachmentReadOnly;
 
+        const MetalTexture *firstTexture = nullptr;
+
         for (uint32_t i = 0; i < desc.colorAttachmentsCount; i++) {
             const MetalTextureView *colorAttachmentView = desc.colorAttachmentViews && desc.colorAttachmentViews[i] ? static_cast<const MetalTextureView *>(desc.colorAttachmentViews[i]) : nullptr;
             const MetalTexture *colorAttachment = colorAttachmentView ? colorAttachmentView->parentTexture : static_cast<const MetalTexture *>(desc.colorAttachments[i]);
@@ -1971,8 +1973,7 @@ namespace plume {
             colorAttachments.emplace_back(attachment);
 
             if (i == 0) {
-                width = colorAttachment->desc.width;
-                height = colorAttachment->desc.height;
+                firstTexture = colorAttachment;
             }
         }
 
@@ -1990,22 +1991,22 @@ namespace plume {
             depthAttachment.sampleCount = interfaceDepthAttachment->desc.multisampling.sampleCount;
 
             if (desc.colorAttachmentsCount == 0) {
-                width = interfaceDepthAttachment->desc.width;
-                height = interfaceDepthAttachment->desc.height;
+                firstTexture = interfaceDepthAttachment;
             }
         }
 
-        // get sample count and sample positions from either the color or depth attachment
-        const RenderTexture *texture = desc.colorAttachmentsCount > 0 ? desc.colorAttachments[0] : desc.depthAttachment;
-        const MetalTexture *metalTexture = static_cast<const MetalTexture*>(texture);
+        if (firstTexture) {
+            width = firstTexture->desc.width;
+            height = firstTexture->desc.height;
 
-        sampleCount = metalTexture->desc.multisampling.sampleCount;
-        if (metalTexture->desc.multisampling.sampleCount > 1) {
-            for (uint32_t i = 0; i < metalTexture->desc.multisampling.sampleCount; i++) {
-                // Normalize from [-8, 7] to [0,1) range
-                float normalizedX = metalTexture->desc.multisampling.sampleLocations[i].x / 16.0f + 0.5f;
-                float normalizedY = metalTexture->desc.multisampling.sampleLocations[i].y / 16.0f + 0.5f;
-                samplePositions[i] = { normalizedX, normalizedY };
+            sampleCount = firstTexture->desc.multisampling.sampleCount;
+            if (firstTexture->desc.multisampling.sampleCount > 1) {
+                for (uint32_t i = 0; i < firstTexture->desc.multisampling.sampleCount; i++) {
+                    // Normalize from [-8, 7] to [0,1) range
+                    float normalizedX = firstTexture->desc.multisampling.sampleLocations[i].x / 16.0f + 0.5f;
+                    float normalizedY = firstTexture->desc.multisampling.sampleLocations[i].y / 16.0f + 0.5f;
+                    samplePositions[i] = { normalizedX, normalizedY };
+                }
             }
         }
 
