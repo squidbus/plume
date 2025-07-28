@@ -8,7 +8,8 @@ if(APPLE)
 endif()
 
 # Project options
-option(SDL_VULKAN_ENABLED "Enable SDL Vulkan integration" OFF)
+include(CMakeDependentOption)
+cmake_dependent_option(SDL_VULKAN_ENABLED "Enable SDL Vulkan integration" OFF "CMAKE_SYSTEM_NAME MATCHES \"Linux\"" OFF)
 option(PLUME_BUILD_EXAMPLES "Build example applications" OFF)
 
 # Windows-specific definitions
@@ -17,14 +18,15 @@ if(WIN32)
 endif()
 
 # Enable SDL Vulkan support
-if (CMAKE_SYSTEM_NAME MATCHES "Linux" AND SDL_VULKAN_ENABLED)
-    add_compile_definitions("SDL_VULKAN_ENABLED")
-endif()
-
-# Find SDL2 only if Vulkan via SDL is enabled
 if(SDL_VULKAN_ENABLED)
-    find_package(SDL2 REQUIRED)
-    message(STATUS "Building with SDL2_INCLUDE_DIRS: ${SDL2_INCLUDE_DIRS}")
+    if (NOT TARGET SDL2::SDL2)
+        find_package(SDL2 REQUIRED)
+    else()
+        set(SDL2_INCLUDE_DIRS "$<TARGET_PROPERTY:SDL2::SDL2,INTERFACE_INCLUDE_DIRECTORIES>")
+    endif()
+
+    message(STATUS "Plume - Building with SDL2_INCLUDE_DIRS: ${SDL2_INCLUDE_DIRS}")
+    add_compile_definitions("SDL_VULKAN_ENABLED")
 endif()
 
 # Print status messages
