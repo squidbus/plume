@@ -2812,6 +2812,10 @@ namespace plume {
 
     D3D12Shader::~D3D12Shader() { }
 
+    void D3D12Shader::setName(const std::string &name) {
+        // Nothing to set a name on.
+    }
+
     // D3D12Sampler
 
     D3D12Sampler::D3D12Sampler(D3D12Device *device, const RenderSamplerDesc &desc) {
@@ -2892,7 +2896,7 @@ namespace plume {
         }
     }
 
-    void D3D12ComputePipeline::setName(const std::string& name) const {
+    void D3D12ComputePipeline::setName(const std::string &name) {
         setObjectName(d3d, name);
     }
 
@@ -3035,7 +3039,7 @@ namespace plume {
         }
     }
 
-    void D3D12GraphicsPipeline::setName(const std::string& name) const {
+    void D3D12GraphicsPipeline::setName(const std::string &name) {
         setObjectName(d3d, name);
     }
 
@@ -3259,7 +3263,7 @@ namespace plume {
         }
     }
 
-    void D3D12RaytracingPipeline::setName(const std::string& name) const {
+    void D3D12RaytracingPipeline::setName(const std::string &name) {
         setObjectName(stateObject, name);
     }
 

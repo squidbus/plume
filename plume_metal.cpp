@@ -1301,6 +1301,10 @@ namespace plume {
         library->release();
     }
 
+    void MetalShader::setName(const std::string &name) {
+        library->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
+    }
+
     MTL::Function* MetalShader::createFunction(const RenderSpecConstant *specConstants, const uint32_t specConstantsCount) const {
         MTL::FunctionConstantValues *values = MTL::FunctionConstantValues::alloc()->init();
         if (specConstants != nullptr) {
@@ -1396,7 +1400,7 @@ namespace plume {
         if (state.pipelineState) state.pipelineState->release();
     }
 
-    void MetalComputePipeline::setName(const std::string& name) const {
+    void MetalComputePipeline::setName(const std::string &name) {
         // TODO: New - setting name happens at descriptor level - this would have to be reworked
     }
 
@@ -1550,7 +1554,7 @@ namespace plume {
         if (state.depthStencilState) state.depthStencilState->release();
     }
 
-    void MetalGraphicsPipeline::setName(const std::string& name) const {
+    void MetalGraphicsPipeline::setName(const std::string &name) {
         // TODO: New - setting name happens at descriptor level - this would have to be reworked
     }
 
