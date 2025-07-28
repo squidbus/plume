@@ -2942,7 +2942,7 @@ namespace plume {
         }
 
         if (dirtyGraphicsState.vertexBuffers) {
-            std::array<bool, 31> slotUsed = {false};
+            std::array<bool, 31> slotUsed{};
 
             for (uint32_t i = 0; i < viewCount; i++) {
                 // Bind right after the push constants, up till the max vertex buffer index
