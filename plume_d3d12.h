@@ -143,7 +143,7 @@ namespace plume {
         std::vector<D3D12_CPU_DESCRIPTOR_HANDLE> colorHandles;
         std::vector<uint32_t> colorTargetAllocatorOffsets;
         D3D12_CPU_DESCRIPTOR_HANDLE depthHandle = {};
-        uint32_t depthTargetAllocatorOffset = 0;
+        uint32_t depthTargetAllocatorOffset = D3D12DescriptorHeapAllocator::INVALID_OFFSET;
 
         D3D12Framebuffer(D3D12Device *device, const RenderFramebufferDesc &desc);
         ~D3D12Framebuffer() override;

@@ -1756,7 +1756,7 @@ namespace plume {
         for (const uint32_t targetAllocatorOffset : colorTargetAllocatorOffsets) {
             device->colorTargetHeapAllocator->free(targetAllocatorOffset, 1);
         }
-        if (depthTargetAllocatorOffset) {
+        if (depthTargetAllocatorOffset != D3D12DescriptorHeapAllocator::INVALID_OFFSET) {
             device->depthTargetHeapAllocator->free(depthTargetAllocatorOffset, 1);
         }
     }
