@@ -821,8 +821,8 @@ namespace plume {
             case RenderHeapType::DEFAULT:
                 return MTL::ResourceStorageModePrivate;
             case RenderHeapType::UPLOAD:
-                return MTL::ResourceStorageModeShared;
             case RenderHeapType::READBACK:
+            case RenderHeapType::GPU_UPLOAD:
                 return MTL::ResourceStorageModeShared;
             default:
                 assert(false && "Unknown heap type.");
@@ -3283,6 +3283,7 @@ namespace plume {
         capabilities.preferHDR = mtl->recommendedMaxWorkingSetSize() > (512 * 1024 * 1024);
         capabilities.dynamicDepthBias = true;
         capabilities.uma = mtl->hasUnifiedMemory();
+        capabilities.gpuUploadHeap = capabilities.uma;
         capabilities.queryPools = false;
 
         nullBuffer = createBuffer(RenderBufferDesc::DefaultBuffer(16, RenderBufferFlag::VERTEX));

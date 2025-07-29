@@ -368,7 +368,8 @@ namespace plume {
         UNKNOWN,
         DEFAULT,
         UPLOAD,
-        READBACK
+        READBACK,
+        GPU_UPLOAD
     };
 
     enum class RenderTextureArrangement {
@@ -1900,6 +1901,9 @@ namespace plume {
 
         // UMA.
         bool uma = false;
+
+        // GPU Upload heap.
+        bool gpuUploadHeap = false;
 
         // Query Pools.
         bool queryPools = false;
