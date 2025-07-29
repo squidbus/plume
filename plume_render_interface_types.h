@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 #include <cfloat>
+#include <cstdint>
 
 #if defined(_WIN64)
 #include <Windows.h>

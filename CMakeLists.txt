@@ -7,9 +7,11 @@ if(APPLE)
     enable_language(OBJC OBJCXX)
 endif()
 
+string(COMPARE EQUAL ${CMAKE_SYSTEM_NAME} "Linux" IS_LINUX)
+
 # Project options
 include(CMakeDependentOption)
-cmake_dependent_option(SDL_VULKAN_ENABLED "Enable SDL Vulkan integration" OFF "CMAKE_SYSTEM_NAME MATCHES \"Linux\"" OFF)
+cmake_dependent_option(SDL_VULKAN_ENABLED "Enable SDL Vulkan integration" OFF IS_LINUX OFF)
 option(PLUME_BUILD_EXAMPLES "Build example applications" OFF)
 
 # Windows-specific definitions
