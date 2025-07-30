@@ -528,6 +528,7 @@ namespace plume {
         NS::String *functionName = nullptr;
         RenderShaderFormat format = RenderShaderFormat::UNKNOWN;
         MTL::Library *library = nullptr;
+        NS::String *debugName = nullptr;
 
         MetalShader(const MetalDevice *device, const void *data, uint64_t size, const char *entryPointName, RenderShaderFormat format);
         ~MetalShader() override;
