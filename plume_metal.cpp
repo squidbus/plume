@@ -1295,10 +1295,17 @@ namespace plume {
     MetalShader::~MetalShader() {
         functionName->release();
         library->release();
+        if (debugName) {
+            debugName->release();
+        }
     }
 
     void MetalShader::setName(const std::string &name) {
-        library->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));
+        if (debugName) {
+            debugName->release();
+        }
+        debugName = NS::String::string(name.c_str(), NS::UTF8StringEncoding);
+        library->setLabel(debugName);
     }
 
     MTL::Function* MetalShader::createFunction(const RenderSpecConstant *specConstants, const uint32_t specConstantsCount) const {
@@ -1316,6 +1323,10 @@ namespace plume {
         if (error != nullptr) {
             fprintf(stderr, "MTLLibrary newFunction: failed with error: %s.\n", error->localizedDescription()->utf8String());
             return nullptr;
+        }
+
+        if (debugName) {
+            function->setLabel(debugName);
         }
 
         return function;
