@@ -298,6 +298,15 @@ namespace plume {
     };
 
     struct MetalCommandList : RenderCommandList {
+        union ClearValue {
+            RenderColor color;
+            float depth;
+            float stencil;
+
+            ClearValue() : depth(0.0f) {}
+            ~ClearValue() {}
+        };
+
         struct PushConstantData : RenderPushConstantRange {
             std::vector<uint8_t> data;
 
@@ -319,6 +328,12 @@ namespace plume {
 
         ComputeStateFlags dirtyComputeState{};
         GraphicsStateFlags dirtyGraphicsState{};
+
+        struct PendingClears {
+            std::vector<MTL::LoadAction> initialAction;
+            std::vector<ClearValue> clearValues;
+            bool active = false;
+        } pendingClears;
 
         struct {
             MTL::RenderPipelineState* lastPipelineState = nullptr;
@@ -414,6 +429,7 @@ namespace plume {
         void prepareClearVertices(const RenderRect& rect, simd::float2* outVertices);
         void checkForUpdatesInGraphicsState();
         void setCommonClearState() const;
+        void handlePendingClears();
     };
 
     struct MetalCommandFence : RenderCommandFence {
@@ -560,7 +576,7 @@ namespace plume {
 
     struct MetalComputePipeline : MetalPipeline {
         MetalComputeState state;
-        
+
         MetalComputePipeline(const MetalDevice *device, const RenderComputePipelineDesc &desc);
         ~MetalComputePipeline() override;
         void setName(const std::string &name) override;
@@ -569,7 +585,7 @@ namespace plume {
 
     struct MetalGraphicsPipeline : MetalPipeline {
         MetalRenderState state;
-        
+
         MetalGraphicsPipeline(const MetalDevice *device, const RenderGraphicsPipelineDesc &desc);
         ~MetalGraphicsPipeline() override;
         void setName(const std::string &name) override;
