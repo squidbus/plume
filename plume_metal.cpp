@@ -3133,12 +3133,10 @@ namespace plume {
 
         if (activeComputeEncoder == nullptr) {
             NS::AutoreleasePool *releasePool = NS::AutoreleasePool::alloc()->init();
-
-            MTL::ComputePassDescriptor *computeDescriptor = MTL::ComputePassDescriptor::alloc()->init();
-            activeComputeEncoder = mtl->computeCommandEncoder(computeDescriptor);
+            
+            activeComputeEncoder = mtl->computeCommandEncoder(MTL::DispatchTypeConcurrent);
             activeComputeEncoder->setLabel(MTLSTR("Compute Encoder"));
 
-            computeDescriptor->release();
             activeComputeEncoder->retain();
             releasePool->release();
 
@@ -3383,7 +3381,7 @@ namespace plume {
         activeType = EncoderType::Resolve;
 
         if (activeResolveComputeEncoder == nullptr) {
-            activeResolveComputeEncoder = mtl->computeCommandEncoder();
+            activeResolveComputeEncoder = mtl->computeCommandEncoder(MTL::DispatchTypeConcurrent);
             activeResolveComputeEncoder->setLabel(MTLSTR("Resolve Texture Encoder"));
             activeResolveComputeEncoder->setComputePipelineState(device->resolveTexturePipelineState);
 
