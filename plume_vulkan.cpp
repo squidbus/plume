@@ -68,13 +68,13 @@ namespace plume {
     
     static const std::unordered_set<std::string> RequiredDeviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+    };
+    
+    static const std::unordered_set<std::string> OptionalDeviceExtensions = {
         VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME,
         VK_EXT_ROBUSTNESS_2_EXTENSION_NAME,
         VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
         VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME,
-    };
-    
-    static const std::unordered_set<std::string> OptionalDeviceExtensions = {
         VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
         VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
         VK_KHR_PIPELINE_LIBRARY_EXTENSION_NAME,
@@ -542,7 +542,7 @@ namespace plume {
         }
     }
 
-    static VkSamplerAddressMode toVk(RenderTextureAddressMode mode) {
+    static VkSamplerAddressMode toVk(RenderTextureAddressMode mode, bool samplerMirrorClampToEdgeSupported) {
         switch (mode) {
         case RenderTextureAddressMode::WRAP:
             return VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -553,6 +553,7 @@ namespace plume {
         case RenderTextureAddressMode::BORDER:
             return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
         case RenderTextureAddressMode::MIRROR_ONCE:
+            assert(samplerMirrorClampToEdgeSupported && "MIRROR_ONCE is not supported when samplerMirrorClampToEdge is not supported.");
             return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
         default:
             assert(false && "Unknown texture address mode.");
@@ -1309,9 +1310,9 @@ namespace plume {
         samplerInfo.minFilter = toVk(desc.minFilter);
         samplerInfo.magFilter = toVk(desc.magFilter);
         samplerInfo.mipmapMode = toVk(desc.mipmapMode);
-        samplerInfo.addressModeU = toVk(desc.addressU);
-        samplerInfo.addressModeV = toVk(desc.addressV);
-        samplerInfo.addressModeW = toVk(desc.addressW);
+        samplerInfo.addressModeU = toVk(desc.addressU, device->capabilities.samplerMirrorClampToEdge);
+        samplerInfo.addressModeV = toVk(desc.addressV, device->capabilities.samplerMirrorClampToEdge);
+        samplerInfo.addressModeW = toVk(desc.addressW, device->capabilities.samplerMirrorClampToEdge);
         samplerInfo.mipLodBias = desc.mipLODBias;
         samplerInfo.anisotropyEnable = desc.anisotropyEnabled;
         samplerInfo.maxAnisotropy = float(desc.maxAnisotropy);
@@ -4066,6 +4067,7 @@ namespace plume {
         capabilities.descriptorIndexing = descriptorIndexing;
         capabilities.scalarBlockLayout = scalarBlockLayout;
         capabilities.bufferDeviceAddress = bufferDeviceAddress;
+        capabilities.samplerMirrorClampToEdge = supportedOptionalExtensions.find(VK_KHR_SAMPLER_MIRROR_CLAMP_TO_EDGE_EXTENSION_NAME) != supportedOptionalExtensions.end();
         capabilities.presentWait = presentWait;
         capabilities.displayTiming = supportedOptionalExtensions.find(VK_GOOGLE_DISPLAY_TIMING_EXTENSION_NAME) != supportedOptionalExtensions.end();
         capabilities.maxTextureSize = physicalDeviceProperties.limits.maxImageDimension2D;

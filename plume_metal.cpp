@@ -3621,6 +3621,7 @@ namespace plume {
         capabilities.uma = mtl->hasUnifiedMemory();
         capabilities.gpuUploadHeap = capabilities.uma;
         capabilities.queryPools = false;
+        capabilities.samplerMirrorClampToEdge = true;
 
 #if PLUME_IOS
         capabilities.descriptorIndexing = mtl->supportsFamily(MTL::GPUFamilyApple3);
