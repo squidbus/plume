@@ -1989,16 +1989,20 @@ namespace plume {
     }
     
     void D3D12CommandList::drawInstanced(uint32_t vertexCountPerInstance, uint32_t instanceCount, uint32_t startVertexLocation, uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkTopology();
         checkStencilRef();
         checkFramebufferSamplePositions();
+
         d3d->DrawInstanced(vertexCountPerInstance, instanceCount, startVertexLocation, startInstanceLocation);
     }
 
     void D3D12CommandList::drawIndexedInstanced(uint32_t indexCountPerInstance, uint32_t instanceCount, uint32_t startIndexLocation, int32_t baseVertexLocation, uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkTopology();
         checkStencilRef();
         checkFramebufferSamplePositions();
+
         d3d->DrawIndexedInstanced(indexCountPerInstance, instanceCount, startIndexLocation, baseVertexLocation, startInstanceLocation);
     }
 

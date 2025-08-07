@@ -2894,12 +2894,14 @@ namespace plume {
     }
 
     void VulkanCommandList::drawInstanced(uint32_t vertexCountPerInstance, uint32_t instanceCount, uint32_t startVertexLocation, uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkActiveRenderPass();
 
         vkCmdDraw(vk, vertexCountPerInstance, instanceCount, startVertexLocation, startInstanceLocation);
     }
     
     void VulkanCommandList::drawIndexedInstanced(uint32_t indexCountPerInstance, uint32_t instanceCount, uint32_t startIndexLocation, int32_t baseVertexLocation, uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkActiveRenderPass();
 
         vkCmdDrawIndexed(vk, indexCountPerInstance, instanceCount, startIndexLocation, baseVertexLocation, startInstanceLocation);
