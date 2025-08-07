@@ -2008,6 +2008,10 @@ namespace plume {
         drawable.desc.height = height;
         drawable.desc.flags = RenderTextureFlag::RENDER_TARGET;
         drawable.desc.format = mapRenderFormat(nextDrawable->texture()->pixelFormat());
+        if (drawable.mtl) {
+            // Release our reference before replacing.
+            drawable.mtl->release();
+        }
         drawable.mtl = nextDrawable;
 
         drawable.mtl->retain();
@@ -2132,15 +2136,27 @@ namespace plume {
 
         this->device = device;
 
-        // TODO: Unimplemented
-        // Dummy values, to be replaced with actual query results
+        MTL::CounterSampleBufferDescriptor *sampleBufferDesc = MTL::CounterSampleBufferDescriptor::alloc()->init();
+        sampleBufferDesc->setCounterSet(device->timestampCounterSet);
+        sampleBufferDesc->setStorageMode(MTL::StorageModeShared);
+        sampleBufferDesc->setSampleCount(queryCount);
+        sampleBuffer = device->mtl->newCounterSampleBuffer(sampleBufferDesc, nullptr);
+        sampleBufferDesc->release();
+
         results.resize(queryCount, 0);
     }
 
-    MetalQueryPool::~MetalQueryPool() { }
+    MetalQueryPool::~MetalQueryPool() {
+        sampleBuffer->release();
+    }
 
     void MetalQueryPool::queryResults() {
-        // TODO: Unimplemented
+        NS::AutoreleasePool *releasePool = NS::AutoreleasePool::alloc()->init();
+
+        const NS::Data* data = sampleBuffer->resolveCounterRange(NS::Range(0, results.size()));
+        std::memcpy(results.data(), data->mutableBytes(), results.size() * sizeof(uint64_t));
+
+        releasePool->release();
     }
 
     const uint64_t *MetalQueryPool::getResults() const {
@@ -2156,6 +2172,13 @@ namespace plume {
     MetalCommandList::MetalCommandList(const MetalCommandQueue *queue) {
         this->device = queue->device;
         this->queue = queue;
+
+        NS::AutoreleasePool *releasePool = NS::AutoreleasePool::alloc()->init();
+
+        timestampQueryFence = device->mtl->newFence();
+        timestampQueryFence->setLabel(MTLSTR("Timestamp Query Fence"));
+
+        releasePool->release();
     }
 
     MetalCommandList::~MetalCommandList() {
@@ -2166,10 +2189,13 @@ namespace plume {
                 fence->release();
             }
         }
+
+        timestampQueryFence->release();
     }
 
     void MetalCommandList::begin() {
         assert(mtl == nullptr);
+        startedEncoding = false;
         mtl = queue->mtl->commandBufferWithUnretainedReferences();
         mtl->setLabel(MTLSTR("RT64 Command List"));
 
@@ -3091,12 +3117,53 @@ namespace plume {
 
     void MetalCommandList::resetQueryPool(const RenderQueryPool *queryPool, uint32_t queryFirstIndex, uint32_t queryCount) {
         assert(queryPool != nullptr);
-        // TODO: Unimplemented
+        // No-op
     }
 
     void MetalCommandList::writeTimestamp(const RenderQueryPool *queryPool, uint32_t queryIndex) {
         assert(queryPool != nullptr);
-        // TODO: Unimplemented
+
+        const MetalQueryPool *interfaceQueryPool = static_cast<const MetalQueryPool *>(queryPool);
+
+        MTL::ComputeCommandEncoder *computeEncoder = activeComputeEncoder != nullptr ? activeComputeEncoder : activeResolveComputeEncoder;
+        if (computeEncoder != nullptr && device->mtl->supportsCounterSampling(MTL::CounterSamplingPointAtDispatchBoundary)) {
+            computeEncoder->sampleCountersInBuffer(interfaceQueryPool->sampleBuffer, queryIndex, true);
+        } else if (activeRenderEncoder != nullptr && device->mtl->supportsCounterSampling(MTL::CounterSamplingPointAtDrawBoundary)) {
+            activeRenderEncoder->sampleCountersInBuffer(interfaceQueryPool->sampleBuffer, queryIndex, true);
+        } else if (device->mtl->supportsCounterSampling(MTL::CounterSamplingPointAtBlitBoundary)) {
+            // If we are here because dispatch/draw sampling is not supported, end the
+            // current encoder and ensure we have a blit encoder for sampling.
+            endOtherEncoders(EncoderType::Blit);
+            checkActiveBlitEncoder();
+
+            activeBlitEncoder->sampleCountersInBuffer(interfaceQueryPool->sampleBuffer, queryIndex, true);
+        } else if (device->mtl->supportsCounterSampling(MTL::CounterSamplingPointAtStageBoundary)) {
+            // If the device does not support the required sampling point, but supports sampling at stage boundaries
+            // (e.g. Apple GPUs), we need to use a dummy blit encoder configured to sample to the buffer.
+            endOtherEncoders(EncoderType::None);
+
+            NS::AutoreleasePool *releasePool = NS::AutoreleasePool::alloc()->init();
+
+            MTL::BlitPassDescriptor *descriptor = MTL::BlitPassDescriptor::alloc()->init();
+            MTL::BlitPassSampleBufferAttachmentDescriptor *sampleDescriptor = descriptor->sampleBufferAttachments()->object(0);
+            sampleDescriptor->setSampleBuffer(interfaceQueryPool->sampleBuffer);
+            sampleDescriptor->setStartOfEncoderSampleIndex(queryIndex);
+            sampleDescriptor->setEndOfEncoderSampleIndex(queryIndex);
+
+            MTL::BlitCommandEncoder *encoder = mtl->blitCommandEncoder(descriptor);
+            encoder->setLabel(MTLSTR("Timestamp Query Encoder"));
+            descriptor->release();
+
+            // Wait for query fence and perform dummy operation to record timestamp.
+            const MetalBuffer* nullBuffer = static_cast<const MetalBuffer *>(device->nullBuffer.get());
+            if (startedEncoding) {
+                encoder->waitForFence(timestampQueryFence);
+            }
+            encoder->fillBuffer(nullBuffer->mtl, NS::Range(0, 1), 0);
+            encoder->endEncoding();
+
+            releasePool->release();
+        }
     }
 
     void MetalCommandList::endOtherEncoders(EncoderType type) {
@@ -3140,6 +3207,8 @@ namespace plume {
             activeComputeEncoder->retain();
             releasePool->release();
 
+            startedEncoding = true;
+
             barrierWait(MetalBarrierStage::COMPUTE, activeComputeEncoder);
 
             dirtyComputeState.setAll();
@@ -3179,6 +3248,7 @@ namespace plume {
         if (activeComputeEncoder != nullptr) {
             bindEncoderResources(activeComputeEncoder, true);
             barrierUpdate(MetalBarrierStage::COMPUTE, activeComputeEncoder);
+            activeComputeEncoder->updateFence(timestampQueryFence);
             activeComputeEncoder->endEncoding();
             activeComputeEncoder->release();
             activeComputeEncoder = nullptr;
@@ -3241,6 +3311,8 @@ namespace plume {
 
             activeRenderEncoder->retain();
             releasePool->release();
+
+            startedEncoding = true;
             
             // Reset pending clears since we've now handled them
             if (pendingClears.active) {
@@ -3337,6 +3409,7 @@ namespace plume {
         if (activeRenderEncoder != nullptr) {
             bindEncoderResources(activeRenderEncoder, false);
             barrierUpdate(MetalBarrierStage::GRAPHICS, activeRenderEncoder);
+            activeRenderEncoder->updateFence(timestampQueryFence, MTL::RenderStageVertex | MTL::RenderStageFragment);
             activeRenderEncoder->endEncoding();
             activeRenderEncoder->release();
             activeRenderEncoder = nullptr;
@@ -3361,6 +3434,8 @@ namespace plume {
             activeBlitEncoder = mtl->blitCommandEncoder(device->sharedBlitDescriptor);
             activeBlitEncoder->setLabel(MTLSTR("Copy Blit Encoder"));
 
+            startedEncoding = true;
+
             barrierWait(MetalBarrierStage::COPY, activeBlitEncoder);
         }
     }
@@ -3368,6 +3443,7 @@ namespace plume {
     void MetalCommandList::endActiveBlitEncoder() {
         if (activeBlitEncoder != nullptr) {
             barrierUpdate(MetalBarrierStage::COPY, activeBlitEncoder);
+            activeBlitEncoder->updateFence(timestampQueryFence);
             activeBlitEncoder->endEncoding();
             activeBlitEncoder->release();
             activeBlitEncoder = nullptr;
@@ -3385,6 +3461,8 @@ namespace plume {
             activeResolveComputeEncoder->setLabel(MTLSTR("Resolve Texture Encoder"));
             activeResolveComputeEncoder->setComputePipelineState(device->resolveTexturePipelineState);
 
+            startedEncoding = true;
+
             barrierWait(MetalBarrierStage::COPY, activeResolveComputeEncoder);
         }
     }
@@ -3392,6 +3470,7 @@ namespace plume {
     void MetalCommandList::endActiveResolveTextureComputeEncoder() {
         if (activeResolveComputeEncoder != nullptr) {
             barrierUpdate(MetalBarrierStage::COPY, activeResolveComputeEncoder);
+            activeResolveComputeEncoder->updateFence(timestampQueryFence);
             activeResolveComputeEncoder->endEncoding();
             activeResolveComputeEncoder->release();
             activeResolveComputeEncoder = nullptr;
@@ -3600,6 +3679,8 @@ namespace plume {
         description.vendor = mtl->supportsFamily(MTL::GPUFamilyApple1) ? RenderDeviceVendor::APPLE : getRenderDeviceVendor(mtl->registryID());
         description.dedicatedVideoMemory = mtl->recommendedMaxWorkingSetSize();
 
+        timestampCounterSet = findTimestampCounterSet();
+
         // Setup blit, clear and resolve shaders / pipelines
         createClearShaderLibrary();
         createResolvePipelineState();
@@ -3620,7 +3701,7 @@ namespace plume {
         capabilities.dynamicDepthBias = true;
         capabilities.uma = mtl->hasUnifiedMemory();
         capabilities.gpuUploadHeap = capabilities.uma;
-        capabilities.queryPools = false;
+        capabilities.queryPools = timestampCounterSet != nullptr;
         capabilities.samplerMirrorClampToEdge = true;
 
 #if PLUME_IOS
@@ -3777,6 +3858,18 @@ namespace plume {
         MTL::CaptureManager *manager = MTL::CaptureManager::sharedCaptureManager();
         manager->stopCapture();
         return true;
+    }
+
+    const MTL::CounterSet* MetalDevice::findTimestampCounterSet() const {
+        for (uint32_t setIndex = 0; setIndex < mtl->counterSets()->count(); setIndex++){
+            const MTL::CounterSet *counterSet = static_cast<MTL::CounterSet*>(mtl->counterSets()->object(setIndex));
+            for (uint32_t counterIndex = 0; counterIndex < counterSet->counters()->count(); counterIndex++) {
+                const MTL::Counter *counter = static_cast<MTL::Counter*>(counterSet->counters()->object(counterIndex));
+                if (counter->name()->isEqualToString(MTL::CommonCounterTimestamp))
+                    return counterSet;
+            }
+        }
+        return nullptr;
     }
 
     void MetalDevice::createResolvePipelineState() {

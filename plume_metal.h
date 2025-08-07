@@ -298,6 +298,7 @@ namespace plume {
 
     struct MetalQueryPool : RenderQueryPool {
         MetalDevice *device = nullptr;
+        MTL::CounterSampleBuffer *sampleBuffer = nullptr;
         std::vector<uint64_t> results;
 
         MetalQueryPool(MetalDevice *device, uint32_t queryCount);
@@ -352,6 +353,7 @@ namespace plume {
 
         MTL::CommandBuffer *mtl = nullptr;
         EncoderType activeType = EncoderType::None;
+        bool startedEncoding = false;
         MTL::RenderCommandEncoder *activeRenderEncoder = nullptr;
         MTL::ComputeCommandEncoder *activeComputeEncoder = nullptr;
         MTL::BlitCommandEncoder *activeBlitEncoder = nullptr;
@@ -407,6 +409,8 @@ namespace plume {
         const MetalComputeState *activeComputeState = nullptr;
         MetalDescriptorSet* renderDescriptorSets[MAX_DESCRIPTOR_SET_BINDINGS] = {};
         MetalDescriptorSet* computeDescriptorSets[MAX_DESCRIPTOR_SET_BINDINGS] = {};
+
+        MTL::Fence *timestampQueryFence = nullptr;
 
         std::unordered_set<MetalDescriptorSet*> currentEncoderDescriptorSets;
         void bindEncoderResources(MTL::CommandEncoder* encoder, bool isCompute);
@@ -687,6 +691,9 @@ namespace plume {
         MTL::ResidencySet* gpuAddressableResidencySet = nullptr;
         std::mutex gpuAddressableResourcesMutex;
 
+        // Counter sets for query pools
+        const MTL::CounterSet* timestampCounterSet = nullptr;
+
         explicit MetalDevice(MetalInterface *renderInterface, const std::string &preferredDeviceName);
         ~MetalDevice() override;
         std::unique_ptr<RenderDescriptorSet> createDescriptorSet(const RenderDescriptorSetDesc &desc) override;
@@ -715,6 +722,8 @@ namespace plume {
         bool isValid() const;
         bool beginCapture() override;
         bool endCapture() override;
+
+        const MTL::CounterSet* findTimestampCounterSet() const;
 
         // Shader libraries and pipeline states used for emulated operations
         void createResolvePipelineState();
