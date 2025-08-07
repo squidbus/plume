@@ -2857,6 +2857,8 @@ namespace plume {
     }
 
     void VulkanCommandList::dispatch(uint32_t threadGroupCountX, uint32_t threadGroupCountY, uint32_t threadGroupCountZ) {
+        assert(activeComputePipelineLayout != nullptr);
+
         vkCmdDispatch(vk, threadGroupCountX, threadGroupCountY, threadGroupCountZ);
     }
 
@@ -2864,6 +2866,7 @@ namespace plume {
         const VulkanBuffer *interfaceBuffer = static_cast<const VulkanBuffer *>(shaderBindingTable.ref);
         assert(interfaceBuffer != nullptr);
         assert((interfaceBuffer->desc.flags & RenderBufferFlag::SHADER_BINDING_TABLE) && "Buffer must allow being used as a shader binding table.");
+        assert(activeRaytracingPipelineLayout != nullptr);
 
         VkBufferDeviceAddressInfo tableAddressInfo = {};
         tableAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;

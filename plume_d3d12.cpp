@@ -1957,6 +1957,8 @@ namespace plume {
     }
 
     void D3D12CommandList::dispatch(uint32_t threadGroupCountX, uint32_t threadGroupCountY, uint32_t threadGroupCountZ) {
+        assert(activeComputePipelineLayout != nullptr);
+
         d3d->Dispatch(threadGroupCountX, threadGroupCountY, threadGroupCountZ);
     }
 
@@ -1964,6 +1966,7 @@ namespace plume {
         const D3D12Buffer *interfaceBuffer = static_cast<const D3D12Buffer *>(shaderBindingTable.ref);
         assert(interfaceBuffer != nullptr);
         assert((interfaceBuffer->desc.flags & RenderBufferFlag::SHADER_BINDING_TABLE) && "Buffer must allow being used as a shader binding table.");
+        assert(activeComputePipelineLayout != nullptr); // Ray tracing uses compute layout
 
         D3D12_GPU_VIRTUAL_ADDRESS tableAddress = interfaceBuffer->d3d->GetGPUVirtualAddress() + shaderBindingTable.offset;
         const RenderShaderBindingGroupInfo &rayGen = shaderBindingGroupsInfo.rayGen;
