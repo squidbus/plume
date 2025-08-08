@@ -2857,6 +2857,8 @@ namespace plume {
     }
 
     void VulkanCommandList::dispatch(uint32_t threadGroupCountX, uint32_t threadGroupCountY, uint32_t threadGroupCountZ) {
+        assert(activeComputePipelineLayout != nullptr);
+
         vkCmdDispatch(vk, threadGroupCountX, threadGroupCountY, threadGroupCountZ);
     }
 
@@ -2864,6 +2866,7 @@ namespace plume {
         const VulkanBuffer *interfaceBuffer = static_cast<const VulkanBuffer *>(shaderBindingTable.ref);
         assert(interfaceBuffer != nullptr);
         assert((interfaceBuffer->desc.flags & RenderBufferFlag::SHADER_BINDING_TABLE) && "Buffer must allow being used as a shader binding table.");
+        assert(activeRaytracingPipelineLayout != nullptr);
 
         VkBufferDeviceAddressInfo tableAddressInfo = {};
         tableAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
@@ -2894,12 +2897,14 @@ namespace plume {
     }
 
     void VulkanCommandList::drawInstanced(uint32_t vertexCountPerInstance, uint32_t instanceCount, uint32_t startVertexLocation, uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkActiveRenderPass();
 
         vkCmdDraw(vk, vertexCountPerInstance, instanceCount, startVertexLocation, startInstanceLocation);
     }
     
     void VulkanCommandList::drawIndexedInstanced(uint32_t indexCountPerInstance, uint32_t instanceCount, uint32_t startIndexLocation, int32_t baseVertexLocation, uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkActiveRenderPass();
 
         vkCmdDrawIndexed(vk, indexCountPerInstance, instanceCount, startIndexLocation, baseVertexLocation, startInstanceLocation);

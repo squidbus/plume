@@ -2384,6 +2384,7 @@ namespace plume {
     void MetalCommandList::dispatch(const uint32_t threadGroupCountX, const uint32_t threadGroupCountY, const uint32_t threadGroupCountZ) {
         checkActiveComputeEncoder();
         assert(activeComputeEncoder != nullptr && "Cannot encode dispatch on nullptr MTLComputeCommandEncoder!");
+        assert(activeComputePipelineLayout != nullptr);
 
         const MTL::Size threadGroupCount = { threadGroupCountX, threadGroupCountY, threadGroupCountZ };
         const MTL::Size threadGroupSize = { activeComputeState->threadGroupSizeX, activeComputeState->threadGroupSizeY, activeComputeState->threadGroupSizeZ };
@@ -2421,6 +2422,7 @@ namespace plume {
     }
 
     void MetalCommandList::drawInstanced(const uint32_t vertexCountPerInstance, const uint32_t instanceCount, const uint32_t startVertexLocation, const uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkActiveRenderEncoder();
         checkForUpdatesInGraphicsState();
 
@@ -2428,6 +2430,7 @@ namespace plume {
     }
 
     void MetalCommandList::drawIndexedInstanced(const uint32_t indexCountPerInstance, const uint32_t instanceCount, const uint32_t startIndexLocation, const int32_t baseVertexLocation, const uint32_t startInstanceLocation) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         checkActiveRenderEncoder();
         checkForUpdatesInGraphicsState();
 
@@ -2505,6 +2508,7 @@ namespace plume {
     }
 
     void MetalCommandList::setComputeDescriptorSet(RenderDescriptorSet *descriptorSet, uint32_t setIndex) {
+        assert(activeComputePipelineLayout != nullptr);
         assert(setIndex < MAX_DESCRIPTOR_SET_BINDINGS && "Descriptor set index out of range");
 
         MetalDescriptorSet *interfaceDescriptorSet = static_cast<MetalDescriptorSet*>(descriptorSet);
@@ -2558,6 +2562,7 @@ namespace plume {
     }
 
     void MetalCommandList::setGraphicsDescriptorSet(RenderDescriptorSet *descriptorSet, uint32_t setIndex) {
+        assert(activeGraphicsPipelineLayout != nullptr);
         assert(setIndex < MAX_DESCRIPTOR_SET_BINDINGS && "Descriptor set index out of range");
 
         MetalDescriptorSet *interfaceDescriptorSet = static_cast<MetalDescriptorSet*>(descriptorSet);
