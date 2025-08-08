@@ -1481,7 +1481,7 @@ namespace plume {
             } else {
                 layout->setStride(inputSlot.stride);
                 layout->setStepFunction(mapVertexStepFunction(inputSlot.classification));
-                layout->setStepRate((layout->stepFunction() == MTL::VertexStepFunctionPerInstance) ? inputSlot.stride : 1);
+                layout->setStepRate(1);
             }
         }
 
