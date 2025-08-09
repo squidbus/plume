@@ -3091,6 +3091,7 @@ namespace plume {
             assert(false && "Unknown cull mode.");
             return;
         }
+        psoDesc.RasterizerState.FrontCounterClockwise = desc.frontFace == RenderFrontFace::COUNTER_CLOCKWISE;
 
         psoDesc.DepthStencilState.DepthEnable = desc.depthEnabled;
         psoDesc.DepthStencilState.DepthWriteMask = desc.depthWriteEnabled ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
